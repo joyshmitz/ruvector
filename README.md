@@ -33,6 +33,22 @@ Think of it as: **Pinecone + Neo4j + PyTorch + etcd** in one Rust package.
 
 ## Quick Start
 
+### One-Line Install
+
+```bash
+# Install everything (Rust + npm)
+curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/install.sh | bash
+
+# Rust only
+curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/install.sh | bash -s -- --rust-only
+
+# npm only
+curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/install.sh | bash -s -- --npm-only
+
+# List available packages
+curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/install.sh | bash -s -- --list
+```
+
 ### Node.js / Browser
 
 ```bash

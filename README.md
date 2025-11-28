@@ -34,20 +34,7 @@ Think of it as: **Pinecone + Neo4j + PyTorch + etcd** in one Rust package.
 ## Quick Start
 
 ### One-Line Install
-
-```bash
-# Install everything (Rust + npm)
-curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/install.sh | bash
-
-# Rust only
-curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/install.sh | bash -s -- --rust-only
-
-# npm only
-curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/install.sh | bash -s -- --npm-only
-
-# List available packages
-curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/install.sh | bash -s -- --list
-```
+ 
 
 ### Node.js / Browser
 
@@ -57,53 +44,6 @@ npm install ruvector
 
 # Or try instantly
 npx ruvector
-```
-
-```javascript
-const ruvector = require('ruvector');
-
-// Vector search
-const db = new ruvector.VectorDB(128);
-db.insert('doc1', embedding1);
-const results = db.search(queryEmbedding, 10);
-
-// Graph queries (Cypher)
-db.execute("CREATE (a:Person {name: 'Alice'})-[:KNOWS]->(b:Person {name: 'Bob'})");
-db.execute("MATCH (p:Person)-[:KNOWS]->(friend) RETURN friend.name");
-
-// GNN-enhanced search
-const layer = new ruvector.GNNLayer(128, 256, 4);
-const enhanced = layer.forward(query, neighbors, weights);
-
-// Compression (2-32x memory savings)
-const compressed = ruvector.compress(embedding, 0.3);
-
-// Tiny Dancer: AI agent routing
-const router = new ruvector.Router();
-const decision = router.route(candidates, { optimize: 'cost' });
-```
-
-### Rust
-
-```bash
-cargo add ruvector-graph ruvector-gnn
-```
-
-```rust
-use ruvector_graph::{GraphDB, NodeBuilder};
-use ruvector_gnn::{RuvectorLayer, differentiable_search};
-
-let db = GraphDB::new();
-
-let doc = NodeBuilder::new("doc1")
-    .label("Document")
-    .property("embedding", vec![0.1, 0.2, 0.3])
-    .build();
-db.create_node(doc)?;
-
-// GNN layer
-let layer = RuvectorLayer::new(128, 256, 4, 0.1);
-let enhanced = layer.forward(&query, &neighbors, &weights);
 ```
 
 ## Features
@@ -131,30 +71,6 @@ let enhanced = layer.forward(&query, &neighbors, &weights);
 
 ```bash
 cargo add ruvector-raft ruvector-cluster ruvector-replication
-```
-
-```rust
-use ruvector_raft::{RaftNode, RaftNodeConfig};
-use ruvector_cluster::{ClusterManager, ConsistentHashRing};
-use ruvector_replication::{SyncManager, SyncMode};
-
-// Configure a 5-node Raft cluster
-let config = RaftNodeConfig {
-    node_id: "node-1".into(),
-    cluster_members: vec!["node-1", "node-2", "node-3", "node-4", "node-5"]
-        .into_iter().map(Into::into).collect(),
-    election_timeout_min: 150,  // ms
-    election_timeout_max: 300,  // ms
-    heartbeat_interval: 50,     // ms
-};
-let raft = RaftNode::new(config);
-
-// Auto-sharding with consistent hashing (150 virtual nodes per real node)
-let ring = ConsistentHashRing::new(64, 3); // 64 shards, replication factor 3
-let shard = ring.get_shard("my-vector-key");
-
-// Multi-master replication with conflict resolution
-let sync = SyncManager::new(SyncMode::SemiSync { min_replicas: 2 });
 ```
 
 ### AI & ML
@@ -404,6 +320,78 @@ npm install @ruvector/core @ruvector/gnn @ruvector/graph-node
 
 # List all available packages
 npx ruvector install
+```
+
+
+```javascript
+const ruvector = require('ruvector');
+
+// Vector search
+const db = new ruvector.VectorDB(128);
+db.insert('doc1', embedding1);
+const results = db.search(queryEmbedding, 10);
+
+// Graph queries (Cypher)
+db.execute("CREATE (a:Person {name: 'Alice'})-[:KNOWS]->(b:Person {name: 'Bob'})");
+db.execute("MATCH (p:Person)-[:KNOWS]->(friend) RETURN friend.name");
+
+// GNN-enhanced search
+const layer = new ruvector.GNNLayer(128, 256, 4);
+const enhanced = layer.forward(query, neighbors, weights);
+
+// Compression (2-32x memory savings)
+const compressed = ruvector.compress(embedding, 0.3);
+
+// Tiny Dancer: AI agent routing
+const router = new ruvector.Router();
+const decision = router.route(candidates, { optimize: 'cost' });
+```
+
+### Rust
+
+```bash
+cargo add ruvector-graph ruvector-gnn
+```
+
+```rust
+use ruvector_graph::{GraphDB, NodeBuilder};
+use ruvector_gnn::{RuvectorLayer, differentiable_search};
+
+let db = GraphDB::new();
+
+let doc = NodeBuilder::new("doc1")
+    .label("Document")
+    .property("embedding", vec![0.1, 0.2, 0.3])
+    .build();
+db.create_node(doc)?;
+
+// GNN layer
+let layer = RuvectorLayer::new(128, 256, 4, 0.1);
+let enhanced = layer.forward(&query, &neighbors, &weights);
+```
+
+```rust
+use ruvector_raft::{RaftNode, RaftNodeConfig};
+use ruvector_cluster::{ClusterManager, ConsistentHashRing};
+use ruvector_replication::{SyncManager, SyncMode};
+
+// Configure a 5-node Raft cluster
+let config = RaftNodeConfig {
+    node_id: "node-1".into(),
+    cluster_members: vec!["node-1", "node-2", "node-3", "node-4", "node-5"]
+        .into_iter().map(Into::into).collect(),
+    election_timeout_min: 150,  // ms
+    election_timeout_max: 300,  // ms
+    heartbeat_interval: 50,     // ms
+};
+let raft = RaftNode::new(config);
+
+// Auto-sharding with consistent hashing (150 virtual nodes per real node)
+let ring = ConsistentHashRing::new(64, 3); // 64 shards, replication factor 3
+let shard = ring.get_shard("my-vector-key");
+
+// Multi-master replication with conflict resolution
+let sync = SyncManager::new(SyncMode::SemiSync { min_replicas: 2 });
 ```
 
 ## Project Structure

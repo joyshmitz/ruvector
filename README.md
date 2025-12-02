@@ -27,9 +27,11 @@ Traditional vector databases just store and search. When you ask "find similar i
 4. **Scale horizontally** — Raft consensus, multi-master replication, auto-sharding
 5. **Route AI requests** — Semantic routing and FastGRNN neural inference for LLM optimization
 6. **Compress automatically** — 2-32x memory reduction with adaptive tiered compression
-7. **Run anywhere** — Node.js, browser (WASM), HTTP server, or native Rust
+7. **39 attention mechanisms** — Flash, linear, graph, hyperbolic for custom models
+8. **Drop into Postgres** — pgvector-compatible extension with SIMD acceleration
+9. **Run anywhere** — Node.js, browser (WASM), HTTP server, or native Rust
 
-Think of it as: **Pinecone + Neo4j + PyTorch + etcd** in one Rust package.
+Think of it as: **Pinecone + Neo4j + PyTorch + pgvector + etcd** in one Rust package.
 
 ## Quick Start
 

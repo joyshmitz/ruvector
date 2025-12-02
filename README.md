@@ -87,7 +87,7 @@ cargo add ruvector-raft ruvector-cluster ruvector-replication
 
 High-performance attention mechanisms for transformers, graph neural networks, and hyperbolic embeddings. Native Rust with NAPI-RS bindings for maximum performance.
 
-> **Documentation**: [Attention Module Docs](./npm/packages/ruvector-attention/README.md) | [API Reference](./crates/ruvector-attention/README.md)
+> **Documentation**: [Attention Module Docs](./crates/ruvector-attention/README.md)
 
 #### Core Attention Mechanisms
 

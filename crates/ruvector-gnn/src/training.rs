@@ -231,11 +231,19 @@ pub enum LossType {
 ///
 /// Provides forward (loss computation) and backward (gradient computation) passes
 /// for common loss functions used in GNN training.
+///
+/// # Numerical Stability
+///
+/// All loss functions use epsilon clamping and gradient clipping to prevent
+/// numerical instability with extreme prediction values (near 0 or 1).
 pub struct Loss;
 
 impl Loss {
     /// Small epsilon value for numerical stability in logarithms and divisions.
     const EPS: f32 = 1e-7;
+
+    /// Maximum absolute gradient value to prevent explosion.
+    const MAX_GRAD: f32 = 1e6;
 
     /// Compute the loss value between predictions and targets.
     ///
@@ -355,6 +363,8 @@ impl Loss {
     }
 
     /// Cross Entropy gradient: d(CE)/d(pred) = -targets / predictions / n
+    ///
+    /// Gradients are clipped to [-MAX_GRAD, MAX_GRAD] to prevent explosion.
     fn cross_entropy_backward(
         predictions: &Array2<f32>,
         targets: &Array2<f32>,
@@ -363,7 +373,8 @@ impl Loss {
         // Clamp predictions to avoid division by zero
         let safe_pred = predictions.mapv(|x| x.max(Self::EPS));
         let grad = targets / &safe_pred;
-        Ok(grad.mapv(|x| -x / n))
+        // Apply gradient clipping
+        Ok(grad.mapv(|x| (-x / n).clamp(-Self::MAX_GRAD, Self::MAX_GRAD)))
     }
 
     /// Binary Cross Entropy: BCE = -mean(targets * log(pred) + (1 - targets) * log(1 - pred))
@@ -384,6 +395,8 @@ impl Loss {
     }
 
     /// BCE gradient: d(BCE)/d(pred) = (-targets/pred + (1-targets)/(1-pred)) / n
+    ///
+    /// Gradients are clipped to [-MAX_GRAD, MAX_GRAD] to prevent explosion.
     fn bce_backward(predictions: &Array2<f32>, targets: &Array2<f32>) -> Result<Array2<f32>> {
         let n = predictions.len() as f32;
         let grad_vec: Vec<f32> = predictions
@@ -392,7 +405,9 @@ impl Loss {
             .map(|(&p, &t)| {
                 // Clamp predictions for numerical stability
                 let p_safe = p.clamp(Self::EPS, 1.0 - Self::EPS);
-                (-t / p_safe + (1.0 - t) / (1.0 - p_safe)) / n
+                let grad = (-t / p_safe + (1.0 - t) / (1.0 - p_safe)) / n;
+                // Clip gradient to prevent explosion
+                grad.clamp(-Self::MAX_GRAD, Self::MAX_GRAD)
             })
             .collect();
 

@@ -1,7 +1,7 @@
 {
   "name": "ruvllm-esp32",
   "version": "0.2.0",
-  "description": "RuvLLM ESP32 - Full-featured LLM inference engine for ESP32 microcontrollers",
+  "description": "RuvLLM ESP32 - Tiny LLM inference for ESP32 microcontrollers with INT8 quantization, RAG, HNSW vector search, and multi-chip federation. Run AI on $4 hardware.",
   "keywords": [
     "esp32",
     "llm",
@@ -10,7 +10,19 @@
     "embedded",
     "microcontroller",
     "rag",
-    "vector-search"
+    "vector-search",
+    "hnsw",
+    "quantization",
+    "edge-ai",
+    "iot",
+    "machine-learning",
+    "neural-network",
+    "esp32-s3",
+    "xtensa",
+    "riscv",
+    "offline-ai",
+    "tiny-ml",
+    "semantic-memory"
   ],
   "author": "RuVector Team",
   "license": "MIT",

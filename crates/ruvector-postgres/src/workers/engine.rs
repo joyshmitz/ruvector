@@ -47,11 +47,10 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::ipc::{
-    get_shared_memory, BuildIndexRequest, DeleteRequest, InsertRequest, Operation, PayloadRef,
-    ResultStatus, SearchRequest, UpdateIndexRequest, WorkItem, WorkResult,
+    get_shared_memory, BuildIndexRequest, DeleteRequest, InsertRequest, Operation, ResultStatus,
+    SearchRequest, UpdateIndexRequest, WorkItem, WorkResult,
 };
-use super::lifecycle::{get_lifecycle_manager, WorkerHandle, WorkerStatus};
-use super::queue::{get_task_queues, Task, TaskPriority, TaskType};
+use super::lifecycle::{get_lifecycle_manager, WorkerStatus};
 
 // Re-export for external use
 pub use super::ipc::SearchRequest as SearchReq;

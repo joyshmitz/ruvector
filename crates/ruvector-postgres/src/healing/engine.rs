@@ -576,7 +576,7 @@ impl RemediationEngine {
         dry_run: bool,
     ) -> Option<HealingOutcome> {
         let strategy = self.registry.get_by_name(strategy_name)?;
-        let config = self.config.read().clone();
+        let _config = self.config.read().clone();
 
         let context = StrategyContext {
             problem: problem.clone(),

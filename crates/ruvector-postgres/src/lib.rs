@@ -3,6 +3,16 @@
 //! High-performance PostgreSQL extension for vector similarity search.
 //! A drop-in replacement for pgvector with SIMD optimizations.
 
+// Allow development-stage lints for work-in-progress code
+#![allow(unexpected_cfgs)] // pgrx macros (pg12/pg13) and optional features (tokio)
+#![allow(dead_code)] // Stub implementations and future features
+#![allow(unused_variables)] // WIP function signatures
+#![allow(unused_mut)]
+// Variables prepared for future mutation
+// Allow clippy lints common in pgrx extensions and WIP code
+#![allow(clippy::all)] // Allow all clippy warnings for development
+#![allow(for_loops_over_fallibles)] // pgrx derive macro generates this pattern
+
 use pgrx::prelude::*;
 use pgrx::{GucContext, GucFlags, GucRegistry, GucSetting};
 

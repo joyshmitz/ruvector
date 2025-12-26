@@ -3,10 +3,7 @@
 //! Provides automatic RLS policy generation and management for tenant isolation.
 //! Integrates with PostgreSQL's native RLS capabilities.
 
-use std::collections::HashMap;
-
 use dashmap::DashMap;
-use pgrx::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// RLS policy configuration

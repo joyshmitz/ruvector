@@ -33,7 +33,7 @@
 use pgrx::pg_sys::{
     self, bytea, BlockNumber, Buffer, Cost, Datum, IndexAmRoutine, IndexBuildResult,
     IndexBulkDeleteCallback, IndexBulkDeleteResult, IndexInfo, IndexPath, IndexScanDesc,
-    IndexUniqueCheck, IndexVacuumInfo, ItemPointer, ItemPointerData, NodeTag, Page, PlannerInfo,
+    IndexUniqueCheck, IndexVacuumInfo, ItemPointer, ItemPointerData, NodeTag, PlannerInfo,
     Relation, ScanDirection, ScanKey, Selectivity, Size, TIDBitmap,
 };
 use pgrx::prelude::*;
@@ -45,7 +45,7 @@ use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 
 use crate::distance::{distance, DistanceMetric};
-use crate::quantization::{binary, product, scalar, QuantizationType};
+use crate::quantization::{product, scalar, QuantizationType};
 use crate::types::RuVector;
 use pgrx::FromDatum;
 

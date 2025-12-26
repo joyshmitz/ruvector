@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
-use super::detector::{Problem, ProblemType, Severity};
+use super::detector::{Problem, ProblemType};
 
 // ============================================================================
 // Remediation Result
@@ -526,7 +526,7 @@ impl TierEviction {
     }
 
     /// Find cold data candidates for eviction
-    fn find_cold_candidates(&self, limit: usize) -> Vec<i64> {
+    fn find_cold_candidates(&self, _limit: usize) -> Vec<i64> {
         // In production: Query for least recently accessed data
         // SELECT id FROM vectors
         // ORDER BY last_accessed_at ASC NULLS FIRST

@@ -5,18 +5,13 @@
 //! - Partition: Separate partitions per tenant
 //! - Dedicated: Schema-level isolation with separate indexes
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use dashmap::DashMap;
-use parking_lot::RwLock;
-use pgrx::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::registry::{get_registry, IsolationLevel, TenantConfig, TenantError};
+use super::registry::{get_registry, IsolationLevel};
 use super::validation::{
     escape_string_literal, quote_identifier, safe_partition_name, safe_schema_name,
-    validate_identifier, validate_tenant_id, ValidationError,
+    validate_identifier, validate_tenant_id,
 };
 
 /// Partition configuration for tenant

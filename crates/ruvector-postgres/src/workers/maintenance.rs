@@ -31,13 +31,11 @@
 use parking_lot::RwLock;
 use pgrx::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::lifecycle::{get_lifecycle_manager, WorkerStatus};
-use super::queue::{get_task_queues, Task, TaskPriority, TaskType};
 
 // ============================================================================
 // Maintenance Configuration

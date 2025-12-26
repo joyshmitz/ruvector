@@ -14,7 +14,7 @@
 use parking_lot::RwLock;
 use pgrx::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 

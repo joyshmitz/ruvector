@@ -8,14 +8,11 @@
 //! - Background worker allocation
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use parking_lot::RwLock;
-use pgrx::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::registry::{get_registry, TenantConfig, TenantError, TenantQuota};
+use super::registry::{get_registry, TenantQuota};
 
 /// Current resource usage for a tenant
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

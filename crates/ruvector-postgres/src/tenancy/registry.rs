@@ -3,12 +3,10 @@
 //! Provides tenant management with isolation levels, quotas, and metadata.
 //! Integrates with PostgreSQL's system tables for persistent storage.
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use pgrx::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Maximum number of tenants in shared memory (for fixed-size arrays)

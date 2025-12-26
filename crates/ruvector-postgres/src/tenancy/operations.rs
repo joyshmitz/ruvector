@@ -5,13 +5,11 @@
 
 use std::time::Instant;
 
-use pgrx::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::isolation::{get_isolation_manager, QueryRoute};
 use super::quotas::{get_quota_manager, QuotaResult};
 use super::registry::{get_registry, TenantConfig, TenantError};
-use super::rls::RlsManager;
 use super::validation::{escape_string_literal, validate_ip_address, validate_tenant_id};
 
 /// Result of a tenant-aware operation

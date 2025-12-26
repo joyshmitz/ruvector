@@ -7,7 +7,6 @@
 //! - Zero-copy vector access
 
 use pgrx::pg_sys;
-use pgrx::prelude::*;
 use std::mem::size_of;
 use std::ptr;
 use std::slice;

@@ -500,13 +500,194 @@ impl Default for CircadianController {
     }
 }
 
+/// Hysteresis tracker for preventing flapping on modulation signals
+///
+/// Requires N consecutive ticks above threshold before triggering,
+/// preventing spurious modulation from noise.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HysteresisTracker {
+    /// Current consecutive ticks above threshold
+    ticks_above: u32,
+    /// Required consecutive ticks to trigger
+    required_ticks: u32,
+    /// Threshold value
+    threshold: f32,
+    /// Whether condition is currently triggered
+    triggered: bool,
+}
+
+impl HysteresisTracker {
+    /// Create a new hysteresis tracker
+    ///
+    /// # Arguments
+    ///
+    /// * `threshold` - Value that must be exceeded
+    /// * `required_ticks` - Consecutive ticks needed before triggering
+    pub fn new(threshold: f32, required_ticks: u32) -> Self {
+        Self {
+            ticks_above: 0,
+            required_ticks: required_ticks.max(1),
+            threshold,
+            triggered: false,
+        }
+    }
+
+    /// Update tracker with new value, returns true if triggered
+    pub fn update(&mut self, value: f32) -> bool {
+        if value > self.threshold {
+            self.ticks_above = self.ticks_above.saturating_add(1);
+            if self.ticks_above >= self.required_ticks {
+                self.triggered = true;
+            }
+        } else {
+            self.ticks_above = 0;
+            self.triggered = false;
+        }
+        self.triggered
+    }
+
+    /// Check if currently triggered
+    pub fn is_triggered(&self) -> bool {
+        self.triggered
+    }
+
+    /// Reset tracker
+    pub fn reset(&mut self) {
+        self.ticks_above = 0;
+        self.triggered = false;
+    }
+
+    /// Get ticks above threshold
+    pub fn ticks_above(&self) -> u32 {
+        self.ticks_above
+    }
+}
+
+/// Budget guardrail for automatic deceleration
+///
+/// Tracks compute spend and forces deceleration when budget is exceeded.
+/// Multiplies all duty factors by a reduction factor when overspending.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetGuardrail {
+    /// Budget per hour (arbitrary units matching energy tracking)
+    budget_per_hour: f64,
+    /// Current spend in this hour
+    current_spend: f64,
+    /// Hours elapsed since last reset
+    hours_elapsed: f64,
+    /// Reduction factor when overspending (0.0-1.0)
+    overspend_reduction: f32,
+    /// Whether currently in overspend mode
+    overspending: bool,
+    /// Spend history for trend analysis (last N hours)
+    spend_history: Vec<f64>,
+    /// Max history entries
+    max_history: usize,
+}
+
+impl BudgetGuardrail {
+    /// Create a new budget guardrail
+    ///
+    /// # Arguments
+    ///
+    /// * `budget_per_hour` - Maximum spend allowed per hour
+    /// * `overspend_reduction` - Factor to multiply duty by when overspending (e.g., 0.5)
+    pub fn new(budget_per_hour: f64, overspend_reduction: f32) -> Self {
+        Self {
+            budget_per_hour,
+            current_spend: 0.0,
+            hours_elapsed: 0.0,
+            overspend_reduction: overspend_reduction.clamp(0.0, 1.0),
+            overspending: false,
+            spend_history: Vec::with_capacity(24),
+            max_history: 24,
+        }
+    }
+
+    /// Record spend and time delta
+    pub fn record_spend(&mut self, spend: f64, dt_hours: f64) {
+        self.current_spend += spend;
+        self.hours_elapsed += dt_hours;
+
+        // Check if hour boundary crossed
+        if self.hours_elapsed >= 1.0 {
+            // Save to history
+            if self.spend_history.len() >= self.max_history {
+                self.spend_history.remove(0);
+            }
+            self.spend_history.push(self.current_spend);
+
+            // Reset for new hour
+            self.current_spend = 0.0;
+            self.hours_elapsed -= 1.0;
+        }
+
+        // Check overspend status
+        let projected_spend = self.current_spend / self.hours_elapsed.max(0.001);
+        self.overspending = projected_spend > self.budget_per_hour;
+    }
+
+    /// Get the duty factor multiplier based on budget status
+    ///
+    /// Returns 1.0 if within budget, or overspend_reduction if overspending
+    pub fn duty_multiplier(&self) -> f32 {
+        if self.overspending {
+            self.overspend_reduction
+        } else {
+            1.0
+        }
+    }
+
+    /// Check if currently overspending
+    pub fn is_overspending(&self) -> bool {
+        self.overspending
+    }
+
+    /// Get current spend rate (spend per hour)
+    pub fn current_spend_rate(&self) -> f64 {
+        if self.hours_elapsed > 0.0 {
+            self.current_spend / self.hours_elapsed
+        } else {
+            0.0
+        }
+    }
+
+    /// Get budget utilization (0.0-1.0+)
+    pub fn utilization(&self) -> f64 {
+        self.current_spend_rate() / self.budget_per_hour
+    }
+
+    /// Get average spend from history
+    pub fn average_historical_spend(&self) -> f64 {
+        if self.spend_history.is_empty() {
+            return 0.0;
+        }
+        self.spend_history.iter().sum::<f64>() / self.spend_history.len() as f64
+    }
+
+    /// Reset guardrail
+    pub fn reset(&mut self) {
+        self.current_spend = 0.0;
+        self.hours_elapsed = 0.0;
+        self.overspending = false;
+        self.spend_history.clear();
+    }
+}
+
+impl Default for BudgetGuardrail {
+    fn default() -> Self {
+        Self::new(1000.0, 0.5) // Default: 1000 units/hour, halve duty when overspending
+    }
+}
+
 /// Nervous system metrics scorecard
 ///
-/// Four concrete metrics for measuring system restraint and efficiency:
+/// Five concrete metrics for measuring system restraint and efficiency:
 /// 1. Silence Ratio: How often the system stays calm
 /// 2. Time to Decision: Reflex speed (P50/P95)
 /// 3. Energy per Spike: True efficiency normalized across changes
 /// 4. Calmness Index: Post-learning stability
+/// 5. Write Amplification: Memory writes per meaningful event
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NervousSystemMetrics {
     /// Total ticks observed
@@ -523,6 +704,10 @@ pub struct NervousSystemMetrics {
     decision_latencies: Vec<u64>,
     /// Max latencies to track
     max_latencies: usize,
+    /// Total memory writes (inserts + updates)
+    pub memory_writes: u64,
+    /// Meaningful events (events that changed state)
+    pub meaningful_events: u64,
 }
 
 impl NervousSystemMetrics {
@@ -536,6 +721,8 @@ impl NervousSystemMetrics {
             baseline_spikes_per_hour,
             decision_latencies: Vec::with_capacity(1000),
             max_latencies: 1000,
+            memory_writes: 0,
+            meaningful_events: 0,
         }
     }
 
@@ -547,6 +734,19 @@ impl NervousSystemMetrics {
         }
         self.total_spikes += spikes;
         self.total_energy += energy;
+    }
+
+    /// Record memory operations for write amplification tracking
+    ///
+    /// # Arguments
+    ///
+    /// * `writes` - Number of memory writes (inserts + updates)
+    /// * `meaningful` - Whether this was a meaningful event (changed state)
+    pub fn record_memory_op(&mut self, writes: u64, meaningful: bool) {
+        self.memory_writes += writes;
+        if meaningful {
+            self.meaningful_events += 1;
+        }
     }
 
     /// Record a decision latency in microseconds
@@ -604,9 +804,34 @@ impl NervousSystemMetrics {
         (-spikes_per_hour / self.baseline_spikes_per_hour).exp()
     }
 
+    /// Write Amplification Factor: memory_writes / meaningful_events
+    ///
+    /// Lower is better - fewer redundant writes per real change.
+    /// Ideal systems approach 1.0 (one write per meaningful change).
+    pub fn write_amplification(&self) -> f64 {
+        if self.meaningful_events == 0 {
+            return 0.0;
+        }
+        self.memory_writes as f64 / self.meaningful_events as f64
+    }
+
     /// Check if TTD exceeds budget (for alerting)
     pub fn ttd_exceeds_budget(&self, budget_us: u64) -> bool {
         self.ttd_p95().map(|p95| p95 > budget_us).unwrap_or(false)
+    }
+
+    /// Generate a full scorecard report
+    pub fn scorecard(&self, hours_elapsed: f64) -> NervousSystemScorecard {
+        NervousSystemScorecard {
+            silence_ratio: self.silence_ratio(),
+            ttd_p50_us: self.ttd_p50(),
+            ttd_p95_us: self.ttd_p95(),
+            energy_per_spike: self.energy_per_spike(),
+            calmness_index: self.calmness_index(hours_elapsed),
+            write_amplification: self.write_amplification(),
+            total_ticks: self.total_ticks,
+            total_spikes: self.total_spikes,
+        }
     }
 
     /// Reset metrics
@@ -616,6 +841,97 @@ impl NervousSystemMetrics {
         self.total_spikes = 0;
         self.total_energy = 0.0;
         self.decision_latencies.clear();
+        self.memory_writes = 0;
+        self.meaningful_events = 0;
+    }
+}
+
+/// Complete scorecard for nervous system health
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NervousSystemScorecard {
+    /// Silence ratio (0.0-1.0, higher = calmer)
+    pub silence_ratio: f64,
+    /// Time to decision P50 in microseconds
+    pub ttd_p50_us: Option<u64>,
+    /// Time to decision P95 in microseconds
+    pub ttd_p95_us: Option<u64>,
+    /// Energy per spike
+    pub energy_per_spike: f64,
+    /// Calmness index (0.0-1.0, higher = more settled)
+    pub calmness_index: f64,
+    /// Write amplification factor (lower = better, ideal = 1.0)
+    pub write_amplification: f64,
+    /// Total ticks observed
+    pub total_ticks: u64,
+    /// Total spikes processed
+    pub total_spikes: u64,
+}
+
+impl NervousSystemScorecard {
+    /// Check if system is healthy (meeting all targets)
+    pub fn is_healthy(&self, targets: &ScorecardTargets) -> bool {
+        self.silence_ratio >= targets.min_silence_ratio
+            && self.ttd_p95_us.map(|p95| p95 <= targets.max_ttd_p95_us).unwrap_or(true)
+            && self.energy_per_spike <= targets.max_energy_per_spike
+            && self.write_amplification <= targets.max_write_amplification
+    }
+
+    /// Get health score (0.0-1.0)
+    pub fn health_score(&self, targets: &ScorecardTargets) -> f64 {
+        let mut score = 0.0;
+        let mut count = 0.0;
+
+        // Silence ratio contribution
+        score += (self.silence_ratio / targets.min_silence_ratio).min(1.0);
+        count += 1.0;
+
+        // TTD contribution (inverted - lower is better)
+        if let Some(p95) = self.ttd_p95_us {
+            score += (targets.max_ttd_p95_us as f64 / p95 as f64).min(1.0);
+            count += 1.0;
+        }
+
+        // Energy contribution (inverted - lower is better)
+        if self.energy_per_spike > 0.0 {
+            score += (targets.max_energy_per_spike / self.energy_per_spike).min(1.0);
+            count += 1.0;
+        }
+
+        // Write amplification contribution (inverted - lower is better)
+        if self.write_amplification > 0.0 {
+            score += (targets.max_write_amplification / self.write_amplification).min(1.0);
+            count += 1.0;
+        }
+
+        // Calmness bonus
+        score += self.calmness_index;
+        count += 1.0;
+
+        score / count
+    }
+}
+
+/// Target thresholds for scorecard health checks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScorecardTargets {
+    /// Minimum acceptable silence ratio
+    pub min_silence_ratio: f64,
+    /// Maximum acceptable TTD P95 in microseconds
+    pub max_ttd_p95_us: u64,
+    /// Maximum acceptable energy per spike
+    pub max_energy_per_spike: f64,
+    /// Maximum acceptable write amplification
+    pub max_write_amplification: f64,
+}
+
+impl Default for ScorecardTargets {
+    fn default() -> Self {
+        Self {
+            min_silence_ratio: 0.7,        // At least 70% quiet
+            max_ttd_p95_us: 10_000,        // 10ms max P95
+            max_energy_per_spike: 100.0,   // 100 units max
+            max_write_amplification: 3.0,  // Max 3 writes per meaningful event
+        }
     }
 }
 

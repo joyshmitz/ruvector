@@ -101,7 +101,8 @@ pub mod predictive;
 pub mod workspace;
 
 pub use circadian::{
-    CircadianController, CircadianPhase, CircadianScheduler, NervousSystemMetrics, PhaseModulation,
+    BudgetGuardrail, CircadianController, CircadianPhase, CircadianScheduler, HysteresisTracker,
+    NervousSystemMetrics, NervousSystemScorecard, PhaseModulation, ScorecardTargets,
 };
 pub use coherence::OscillatoryRouter;
 pub use predictive::PredictiveLayer;

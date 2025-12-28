@@ -47,14 +47,24 @@ impl<E: Event + Copy> ShardedEventBus<E> {
     }
 
     /// Create temporal sharding (by timestamp ranges)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `window_size` is 0 (would cause division by zero).
     pub fn new_temporal(num_shards: usize, shard_capacity: usize, window_size: u64) -> Self {
+        assert!(window_size > 0, "window_size must be > 0 to avoid division by zero");
         Self::new(num_shards, shard_capacity, move |event| {
             ((event.timestamp() / window_size) as usize) % num_shards
         })
     }
 
     /// Create hybrid sharding (spatial + temporal)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `window_size` is 0 (would cause division by zero).
     pub fn new_hybrid(num_shards: usize, shard_capacity: usize, window_size: u64) -> Self {
+        assert!(window_size > 0, "window_size must be > 0 to avoid division by zero");
         Self::new(num_shards, shard_capacity, move |event| {
             let spatial = event.source_id() as usize;
             let temporal = (event.timestamp() / window_size) as usize;

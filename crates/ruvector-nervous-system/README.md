@@ -4,7 +4,7 @@
 [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://docs.rs/ruvector-nervous-system)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/tests-313%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-359%20passing-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Lines of Code](https://img.shields.io/badge/lines-22.9k-blue.svg)]()
 
@@ -101,6 +101,21 @@ This crate implements a complete nervous system architecture inspired by biologi
 - **Lock-free ring buffers** with <100ns push/pop
 - Region-based sharding with backpressure control
 - **10,000+ events/ms** sustained throughput
+
+### Circadian Controller (NEW)
+- **SCN-inspired temporal gating** for 5-50× compute savings
+- Phase-aligned duty cycling (Active/Dawn/Dusk/Rest)
+- **Hysteresis thresholds** prevent flapping on noisy signals
+- **Budget guardrails** for automatic deceleration when overspending
+- Monotonic decisions within phase windows
+
+### Nervous System Scorecard (NEW)
+Five metrics that define system health:
+- **Silence Ratio**: How often the system stays calm (target: >70%)
+- **TTD P50/P95**: Time to decision latency
+- **Energy per Spike**: True efficiency normalized across changes
+- **Write Amplification**: Memory writes per meaningful event (target: <3×)
+- **Calmness Index**: Post-learning stability
 
 ## Use Cases: From Practical to Exotic
 
@@ -220,6 +235,52 @@ let gain = router.communication_gain(sender, receiver);
 // Global workspace (4-7 items max)
 let mut workspace = GlobalWorkspace::new(7);
 workspace.broadcast(representation);
+```
+
+### Example: Circadian Duty Cycling (NEW)
+
+```rust,ignore
+use ruvector_nervous_system::routing::{
+    CircadianController, HysteresisTracker, BudgetGuardrail,
+    NervousSystemMetrics, PhaseModulation, ScorecardTargets,
+};
+
+// Create controller with 24-hour cycle
+let mut clock = CircadianController::new(24.0);
+clock.set_coherence(0.8);
+
+// Advance time and check phases
+clock.advance(6.0);
+
+// Gate expensive operations by phase
+if clock.should_compute() {
+    // Active phase: run inference
+}
+if clock.should_learn() {
+    // Learning permitted: gradient updates
+}
+if clock.should_consolidate() {
+    // Rest phase: background consolidation
+}
+
+// Hysteresis: require 5 consecutive ticks above threshold
+let mut coherence_tracker = HysteresisTracker::new(0.7, 5);
+if coherence_tracker.update(current_coherence) {
+    // Only triggers after 5+ ticks above 0.7
+    clock.modulate(PhaseModulation::accelerate(1.5));
+}
+
+// Budget guardrail: auto-decelerate when overspending
+let mut budget = BudgetGuardrail::new(1000.0, 0.5);
+budget.record_spend(current_energy, dt_hours);
+let effective_duty = clock.duty_factor() * budget.duty_multiplier();
+
+// Scorecard metrics
+let mut metrics = NervousSystemMetrics::new(100.0);
+metrics.record_tick(true, 5, 10.0);
+metrics.record_memory_op(3, true); // 3 writes, meaningful
+let scorecard = metrics.scorecard(1.0);
+assert!(scorecard.is_healthy(&ScorecardTargets::default()));
 ```
 
 ## Tutorial: Building a Complete System

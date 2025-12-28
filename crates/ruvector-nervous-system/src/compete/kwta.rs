@@ -68,6 +68,8 @@ impl KWTALayer {
     /// Select top-k neurons
     ///
     /// Returns indices of k neurons with highest activations, sorted in descending order.
+    /// If threshold filtering results in fewer than k candidates, returns all candidates.
+    /// Returns empty vec if no candidates meet the threshold.
     ///
     /// # Performance
     ///
@@ -88,6 +90,11 @@ impl KWTALayer {
             indexed.retain(|(_, v)| *v >= threshold);
         }
 
+        // Handle empty case after filtering
+        if indexed.is_empty() {
+            return Vec::new();
+        }
+
         // Partial sort to get top-k
         let k_actual = self.k.min(indexed.len());
         indexed.select_nth_unstable_by(k_actual - 1, |a, b| {
@@ -105,6 +112,7 @@ impl KWTALayer {
     /// Select top-k neurons with their activation values
     ///
     /// Returns (index, value) pairs sorted by descending activation.
+    /// Returns empty vec if no candidates meet the threshold.
     pub fn select_with_values(&self, inputs: &[f32]) -> Vec<(usize, f32)> {
         assert_eq!(inputs.len(), self.size, "Input size mismatch");
 
@@ -117,6 +125,11 @@ impl KWTALayer {
         // Filter by threshold if set
         if let Some(threshold) = self.threshold {
             indexed.retain(|(_, v)| *v >= threshold);
+        }
+
+        // Handle empty case after filtering
+        if indexed.is_empty() {
+            return Vec::new();
         }
 
         // Partial sort to get top-k

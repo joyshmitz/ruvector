@@ -92,8 +92,9 @@ pub use hdc::{Hypervector, HdcMemory, HdcError};
 pub use hopfield::ModernHopfield;
 pub use plasticity::eprop::{EpropLIF, EpropNetwork, EpropSynapse, LearningSignal};
 pub use routing::{
-    CircadianController, CircadianPhase, CircadianScheduler, CoherenceGatedSystem, GlobalWorkspace,
-    NervousSystemMetrics, OscillatoryRouter, PhaseModulation, PredictiveLayer, Representation,
+    BudgetGuardrail, CircadianController, CircadianPhase, CircadianScheduler, CoherenceGatedSystem,
+    GlobalWorkspace, HysteresisTracker, NervousSystemMetrics, NervousSystemScorecard,
+    OscillatoryRouter, PhaseModulation, PredictiveLayer, Representation, ScorecardTargets,
 };
 pub use separate::{DentateGyrus, SparseProjection, SparseBitVector};
 

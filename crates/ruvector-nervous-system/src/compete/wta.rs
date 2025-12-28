@@ -51,10 +51,15 @@ impl WTALayer {
     ///
     /// # Arguments
     ///
-    /// * `size` - Number of competing neurons
+    /// * `size` - Number of competing neurons (must be > 0)
     /// * `threshold` - Activation threshold for firing
     /// * `inhibition` - Lateral inhibition strength (0.0-1.0)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` is 0.
     pub fn new(size: usize, threshold: f32, inhibition: f32) -> Self {
+        assert!(size > 0, "size must be > 0");
         Self {
             membranes: vec![0.0; size],
             threshold,

@@ -10,6 +10,20 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 ///
 /// Optimized for Single-Producer-Single-Consumer (SPSC) pattern
 /// with atomic head/tail pointers for wait-free operations.
+///
+/// # Thread Safety
+///
+/// This buffer is designed for SPSC (Single-Producer-Single-Consumer) use.
+/// While it is `Send + Sync`, concurrent multi-producer or multi-consumer
+/// access may lead to data races or lost events. For MPSC patterns,
+/// use external synchronization or the `ShardedEventBus` which provides
+/// isolation through sharding.
+///
+/// # Memory Ordering
+///
+/// - Producer writes data before publishing tail (Release)
+/// - Consumer reads head with Acquire before accessing data
+/// - This ensures data visibility across threads in SPSC mode
 pub struct EventRingBuffer<E: Event + Copy> {
     buffer: Vec<UnsafeCell<E>>,
     head: AtomicUsize,

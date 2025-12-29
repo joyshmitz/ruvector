@@ -627,7 +627,7 @@ The intelligence layer has built-in knowledge for common error patterns:
 
 ```bash
 # Setup
-ruvector hooks init [--force]           # Initialize hooks in project
+ruvector hooks init [--force] [--postgres]  # Initialize hooks (--postgres for DB schema)
 ruvector hooks install                   # Install into Claude settings
 
 # Core
@@ -800,13 +800,14 @@ For production deployments, use PostgreSQL instead of JSON files:
 # Set connection URL
 export RUVECTOR_POSTGRES_URL="postgres://user:pass@localhost/ruvector"
 
-# Or use individual variables
-export RUVECTOR_PG_HOST=localhost
-export RUVECTOR_PG_USER=ruvector
-export RUVECTOR_PG_DATABASE=ruvector
+# Initialize PostgreSQL schema (automatic)
+ruvector hooks init --postgres
 
-# Apply schema
+# Or apply schema manually
 psql $RUVECTOR_POSTGRES_URL -f crates/ruvector-cli/sql/hooks_schema.sql
+
+# Build CLI with postgres feature
+cargo build -p ruvector-cli --features postgres
 ```
 
 The PostgreSQL backend provides:

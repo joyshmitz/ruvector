@@ -239,7 +239,7 @@ async fn main() -> Result<()> {
         Commands::Hooks { action } => {
             use cli::hooks::HooksCommands;
             match action {
-                HooksCommands::Init { force } => cli::hooks::init_hooks(force, &config),
+                HooksCommands::Init { force, postgres } => cli::hooks::init_hooks(force, postgres, &config),
                 HooksCommands::Install { settings_dir } => cli::hooks::install_hooks(&settings_dir, &config),
                 HooksCommands::Stats => cli::hooks::show_stats(&config),
                 HooksCommands::Remember { memory_type, content } => {

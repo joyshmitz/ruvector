@@ -114,6 +114,10 @@ pub enum HooksCommands {
         /// Force overwrite existing configuration
         #[arg(long)]
         force: bool,
+
+        /// Initialize PostgreSQL backend (requires RUVECTOR_POSTGRES_URL)
+        #[arg(long)]
+        postgres: bool,
     },
 
     /// Install hooks into Claude settings
@@ -1021,8 +1025,78 @@ pub fn get_intelligence_path() -> PathBuf {
     PathBuf::from(home).join(".ruvector").join("intelligence.json")
 }
 
+/// Initialize PostgreSQL schema for hooks
+fn init_postgres_schema() -> Result<()> {
+    use std::process::Command;
+
+    // Check for PostgreSQL connection URL
+    let pg_url = std::env::var("RUVECTOR_POSTGRES_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .map_err(|_| anyhow::anyhow!(
+            "PostgreSQL URL not set. Set RUVECTOR_POSTGRES_URL or DATABASE_URL environment variable.\n\
+             Example: export RUVECTOR_POSTGRES_URL=\"postgres://user:pass@localhost/ruvector\""
+        ))?;
+
+    println!("{}", "🐘 Initializing PostgreSQL schema...".cyan().bold());
+
+    // Embedded schema SQL
+    let schema_sql = include_str!("../../sql/hooks_schema.sql");
+
+    // Try psql first
+    let result = Command::new("psql")
+        .arg(&pg_url)
+        .arg("-c")
+        .arg(schema_sql)
+        .output();
+
+    match result {
+        Ok(output) => {
+            if output.status.success() {
+                println!("{}", "✅ PostgreSQL schema applied successfully!".green().bold());
+                println!("\n{}", "Tables created:".bold());
+                println!("   • ruvector_hooks_patterns     (Q-learning)");
+                println!("   • ruvector_hooks_memories     (Vector embeddings)");
+                println!("   • ruvector_hooks_trajectories (Learning history)");
+                println!("   • ruvector_hooks_errors       (Error patterns)");
+                println!("   • ruvector_hooks_file_sequences (File predictions)");
+                println!("   • ruvector_hooks_swarm_agents (Swarm registry)");
+                println!("   • ruvector_hooks_swarm_edges  (Coordination graph)");
+                println!("   • ruvector_hooks_stats        (Global statistics)");
+                println!("\n{}", "Functions created:".bold());
+                println!("   • ruvector_hooks_update_q, ruvector_hooks_best_action");
+                println!("   • ruvector_hooks_remember, ruvector_hooks_recall");
+                println!("   • ruvector_hooks_swarm_register, ruvector_hooks_swarm_stats");
+                println!("   • + 8 more helper functions");
+                println!("\n{}", "Next steps:".bold());
+                println!("   1. Run 'ruvector hooks init' to create Claude Code hooks");
+                println!("   2. Build with: cargo build --features postgres");
+                Ok(())
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                anyhow::bail!("Failed to apply schema: {}", stderr);
+            }
+        }
+        Err(e) => {
+            // psql not found, provide manual instructions
+            println!("{}", "⚠️  psql not found. Apply schema manually:".yellow().bold());
+            println!("\n{}", "Option 1: Using psql".bold());
+            println!("   psql $RUVECTOR_POSTGRES_URL -f crates/ruvector-cli/sql/hooks_schema.sql");
+            println!("\n{}", "Option 2: Copy to clipboard (macOS)".bold());
+            println!("   cat crates/ruvector-cli/sql/hooks_schema.sql | pbcopy");
+            println!("\n{}", "Option 3: View schema".bold());
+            println!("   cat crates/ruvector-cli/sql/hooks_schema.sql");
+            anyhow::bail!("psql command not found: {}. See instructions above.", e);
+        }
+    }
+}
+
 /// Initialize hooks
-pub fn init_hooks(force: bool, _config: &Config) -> Result<()> {
+pub fn init_hooks(force: bool, postgres: bool, _config: &Config) -> Result<()> {
+    // Handle PostgreSQL initialization
+    if postgres {
+        return init_postgres_schema();
+    }
+
     let claude_dir = PathBuf::from(".claude");
     let settings_path = claude_dir.join("settings.json");
 
@@ -1149,7 +1223,7 @@ pub fn install_hooks(settings_dir: &str, _config: &Config) -> Result<()> {
     let settings_path = PathBuf::from(settings_dir).join("settings.json");
 
     if !settings_path.exists() {
-        return init_hooks(false, _config);
+        return init_hooks(false, false, _config);
     }
 
     let content = fs::read_to_string(&settings_path)?;

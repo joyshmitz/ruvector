@@ -8,43 +8,46 @@
 [![Node.js](https://img.shields.io/badge/Node.js-16+-green.svg)](https://nodejs.org/)
 [![Bundle Size](https://img.shields.io/bundlephobia/minzip/@ruvector/rudag)](https://bundlephobia.com/package/@ruvector/rudag)
 
-**Self-learning DAG query optimization with WASM acceleration**
+**The fastest way to work with task dependencies in JavaScript**
 
-Build, analyze, and optimize Directed Acyclic Graphs (DAGs) in JavaScript/TypeScript with blazing-fast WebAssembly performance and automatic browser persistence.
+Ever needed to figure out the right order to run tasks? Or find out which step is the bottleneck in your pipeline? That's what rudag does - blazingly fast.
 
-## What is a DAG?
+## What Problem Does This Solve?
 
-A DAG (Directed Acyclic Graph) is a graph where edges flow in one direction and no cycles exist. They're everywhere in software:
+Imagine you're building a system where **Task C** can't start until **Task A** and **Task B** finish:
 
 ```
-     [Scan Table]
-          |
-          v
-      [Filter]
-       /    \
-      v      v
- [Project] [Aggregate]
-      \      /
-       v    v
-      [Output]
+   [Task A: 5s]     [Task B: 3s]
+         \              /
+          \            /
+           v          v
+          [Task C: 2s]
+               |
+               v
+          [Task D: 1s]
 ```
 
-**Common uses:**
-- Query execution plans (SQL optimizers)
-- Task schedulers (build systems, CI/CD)
-- Data pipelines (ETL, streaming)
-- Dependency resolution (package managers)
-- Workflow engines (approval flows, state machines)
+**Common questions:**
+- What order should I run these? → `topoSort()` gives you `[A, B, C, D]`
+- How long will everything take? → `criticalPath()` tells you `A → C → D = 8 seconds`
+- Which task should I optimize first? → `attention()` scores tasks by importance
+
+**This pattern appears everywhere:**
+- 🗄️ Database queries (which tables to scan first?)
+- 🔨 Build systems (compile before linking)
+- 📦 Package managers (install dependencies first)
+- 🔄 CI/CD pipelines (test before deploy)
+- 📊 Data pipelines (extract → transform → load)
 
 ## Why rudag?
 
-| Problem | rudag Solution |
-|---------|----------------|
-| JavaScript is slow for graph algorithms | **WASM core** - Rust-powered, 10-100x faster |
-| DAGs disappear on page refresh | **Auto-persistence** - IndexedDB in browser, files in Node.js |
-| Finding bottlenecks is hard | **Critical path analysis** - Identify slowest execution path |
-| No insight into node importance | **Attention mechanisms** - ML-inspired node scoring |
-| Complex setup | **Zero config** - Works out of the box |
+| Without rudag | With rudag |
+|---------------|------------|
+| Write graph algorithms from scratch | One-liner: `dag.criticalPath()` |
+| Slow JavaScript loops | **Rust/WASM** - 10-100x faster |
+| Data lost on page refresh | **Auto-saves** to IndexedDB |
+| Hard to find bottlenecks | **Attention scores** highlight important nodes |
+| Complex setup | `npm install` and go |
 
 ## Installation
 

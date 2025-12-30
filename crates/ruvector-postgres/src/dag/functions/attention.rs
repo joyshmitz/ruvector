@@ -7,44 +7,34 @@ use pgrx::prelude::*;
 fn dag_attention_scores(
     query_text: &str,
     mechanism: default!(&str, "auto"),
-) -> TableIterator<'static, (
-    name!(node_id, i32),
-    name!(attention_weight, f64),
-)> {
+) -> TableIterator<'static, (name!(node_id, i32), name!(attention_weight, f64))> {
     // Validate mechanism
     let valid = [
-        "topological", "causal_cone", "critical_path",
-        "mincut_gated", "hierarchical_lorentz",
-        "parallel_branch", "temporal_btsp", "auto"
+        "topological",
+        "causal_cone",
+        "critical_path",
+        "mincut_gated",
+        "hierarchical_lorentz",
+        "parallel_branch",
+        "temporal_btsp",
+        "auto",
     ];
 
     if !valid.contains(&mechanism) {
-        pgrx::error!("Invalid attention mechanism: '{}'. Valid: {:?}", mechanism, valid);
+        pgrx::error!(
+            "Invalid attention mechanism: '{}'. Valid: {:?}",
+            mechanism,
+            valid
+        );
     }
 
     // Compute attention scores based on the selected mechanism
     // This would integrate with ruvector-attention crate
     let results = match mechanism {
-        "topological" => vec![
-            (0, 0.45),
-            (1, 0.35),
-            (2, 0.20),
-        ],
-        "causal_cone" => vec![
-            (0, 0.50),
-            (1, 0.30),
-            (2, 0.20),
-        ],
-        "critical_path" => vec![
-            (0, 0.60),
-            (1, 0.25),
-            (2, 0.15),
-        ],
-        _ => vec![
-            (0, 0.40),
-            (1, 0.35),
-            (2, 0.25),
-        ],
+        "topological" => vec![(0, 0.45), (1, 0.35), (2, 0.20)],
+        "causal_cone" => vec![(0, 0.50), (1, 0.30), (2, 0.20)],
+        "critical_path" => vec![(0, 0.60), (1, 0.25), (2, 0.15)],
+        _ => vec![(0, 0.40), (1, 0.35), (2, 0.25)],
     };
 
     TableIterator::new(results)
@@ -52,10 +42,7 @@ fn dag_attention_scores(
 
 /// Get attention matrix for visualization (node-to-node attention)
 #[pg_extern]
-fn dag_attention_matrix(
-    query_text: &str,
-    mechanism: default!(&str, "auto"),
-) -> Vec<Vec<f64>> {
+fn dag_attention_matrix(query_text: &str, mechanism: default!(&str, "auto")) -> Vec<Vec<f64>> {
     // Compute full attention matrix (NxN where N is number of nodes)
     // Each entry [i,j] represents attention from node i to node j
 
@@ -109,7 +96,8 @@ fn dag_attention_visualize(
                 ],
                 "mechanism": mechanism,
                 "critical_path": [0, 1, 2, 3]
-            }).to_string()
+            })
+            .to_string()
         }
         "ascii" => {
             // ASCII art for terminal display
@@ -133,7 +121,8 @@ Query Plan with Attention Weights (topological)
      (users)             (High Attention)
 
 Legend: Higher numbers = More critical to optimize
-"#.to_string()
+"#
+            .to_string()
         }
         "mermaid" => {
             // Mermaid syntax for markdown rendering
@@ -147,20 +136,21 @@ graph BT
     style B fill:#feca57,stroke:#333,stroke-width:2px
     style C fill:#48dbfb,stroke:#333,stroke-width:1.5px
     style D fill:#1dd1a1,stroke:#333,stroke-width:1px
-```"#.to_string()
+```"#
+                .to_string()
         }
         _ => {
-            pgrx::error!("Invalid format: '{}'. Use 'dot', 'json', 'ascii', or 'mermaid'", format);
+            pgrx::error!(
+                "Invalid format: '{}'. Use 'dot', 'json', 'ascii', or 'mermaid'",
+                format
+            );
         }
     }
 }
 
 /// Configure attention hyperparameters for a specific mechanism
 #[pg_extern]
-fn dag_attention_configure(
-    mechanism: &str,
-    params: pgrx::JsonB,
-) {
+fn dag_attention_configure(mechanism: &str, params: pgrx::JsonB) {
     let params_value = params.0;
 
     // Validate and extract parameters based on mechanism
@@ -205,18 +195,24 @@ fn dag_attention_configure(
 
     // Store configuration
     crate::dag::state::DAG_STATE.set_attention_params(mechanism, params_value);
-    pgrx::notice!("Configured attention mechanism '{}' with provided parameters", mechanism);
+    pgrx::notice!(
+        "Configured attention mechanism '{}' with provided parameters",
+        mechanism
+    );
 }
 
 /// Get attention mechanism statistics
 #[pg_extern]
-fn dag_attention_stats() -> TableIterator<'static, (
-    name!(mechanism, String),
-    name!(invocations, i64),
-    name!(avg_latency_us, f64),
-    name!(hit_rate, f64),
-    name!(improvement_ratio, f64),
-)> {
+fn dag_attention_stats() -> TableIterator<
+    'static,
+    (
+        name!(mechanism, String),
+        name!(invocations, i64),
+        name!(avg_latency_us, f64),
+        name!(hit_rate, f64),
+        name!(improvement_ratio, f64),
+    ),
+> {
     // Get statistics from state
     // This would track performance of different attention mechanisms
     let results = vec![
@@ -235,18 +231,25 @@ fn dag_attention_stats() -> TableIterator<'static, (
 fn dag_attention_benchmark(
     query_text: &str,
     iterations: default!(i32, 100),
-) -> TableIterator<'static, (
-    name!(mechanism, String),
-    name!(avg_time_us, f64),
-    name!(min_time_us, f64),
-    name!(max_time_us, f64),
-    name!(std_dev_us, f64),
-)> {
+) -> TableIterator<
+    'static,
+    (
+        name!(mechanism, String),
+        name!(avg_time_us, f64),
+        name!(min_time_us, f64),
+        name!(max_time_us, f64),
+        name!(std_dev_us, f64),
+    ),
+> {
     // Benchmark each attention mechanism
     let mechanisms = [
-        "topological", "causal_cone", "critical_path",
-        "mincut_gated", "hierarchical_lorentz",
-        "parallel_branch", "temporal_btsp"
+        "topological",
+        "causal_cone",
+        "critical_path",
+        "mincut_gated",
+        "hierarchical_lorentz",
+        "parallel_branch",
+        "temporal_btsp",
     ];
 
     let mut results = Vec::new();

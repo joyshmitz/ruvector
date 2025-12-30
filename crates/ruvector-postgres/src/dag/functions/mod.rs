@@ -1,13 +1,13 @@
 //! SQL function implementations for neural DAG learning
 
-pub mod config;
 pub mod analysis;
 pub mod attention;
-pub mod status;
+pub mod config;
 pub mod qudag;
+pub mod status;
 
-pub use config::*;
 pub use analysis::*;
 pub use attention::*;
-pub use status::*;
+pub use config::*;
 pub use qudag::*;
+pub use status::*;

@@ -3,9 +3,9 @@
 //! This module manages the global state for the neural DAG learning system,
 //! including configuration, metrics, and statistics.
 
-use std::sync::{Arc, Mutex};
 use once_cell::sync::Lazy;
 use serde_json::Value;
+use std::sync::{Arc, Mutex};
 
 /// Global DAG state singleton
 pub static DAG_STATE: Lazy<DagState> = Lazy::new(DagState::default);
@@ -91,8 +91,13 @@ impl DagState {
     }
 
     /// Configure SONA parameters
-    pub fn configure_sona(&self, micro_lora_rank: i32, base_lora_rank: i32,
-                          ewc_lambda: f64, pattern_clusters: i32) {
+    pub fn configure_sona(
+        &self,
+        micro_lora_rank: i32,
+        base_lora_rank: i32,
+        ewc_lambda: f64,
+        pattern_clusters: i32,
+    ) {
         let mut inner = self.inner.lock().unwrap();
         inner.micro_lora_rank = micro_lora_rank;
         inner.base_lora_rank = base_lora_rank;
@@ -133,7 +138,9 @@ impl DagState {
 
     /// Set attention parameters for a mechanism
     pub fn set_attention_params(&self, mechanism: &str, params: Value) {
-        self.inner.lock().unwrap()
+        self.inner
+            .lock()
+            .unwrap()
             .attention_params
             .insert(mechanism.to_string(), params);
     }

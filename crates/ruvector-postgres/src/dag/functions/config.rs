@@ -28,15 +28,21 @@ fn dag_set_learning_rate(rate: f64) {
 #[pg_extern]
 fn dag_set_attention(mechanism: &str) {
     let valid_mechanisms = [
-        "topological", "causal_cone", "critical_path",
-        "mincut_gated", "hierarchical_lorentz",
-        "parallel_branch", "temporal_btsp", "auto"
+        "topological",
+        "causal_cone",
+        "critical_path",
+        "mincut_gated",
+        "hierarchical_lorentz",
+        "parallel_branch",
+        "temporal_btsp",
+        "auto",
     ];
 
     if !valid_mechanisms.contains(&mechanism) {
         pgrx::error!(
             "Invalid attention mechanism '{}'. Valid options: {:?}",
-            mechanism, valid_mechanisms
+            mechanism,
+            valid_mechanisms
         );
     }
 
@@ -54,16 +60,25 @@ fn dag_configure_sona(
 ) {
     // Validation
     if !(1..=4).contains(&micro_lora_rank) {
-        pgrx::error!("micro_lora_rank must be between 1 and 4, got {}", micro_lora_rank);
+        pgrx::error!(
+            "micro_lora_rank must be between 1 and 4, got {}",
+            micro_lora_rank
+        );
     }
     if !(4..=16).contains(&base_lora_rank) {
-        pgrx::error!("base_lora_rank must be between 4 and 16, got {}", base_lora_rank);
+        pgrx::error!(
+            "base_lora_rank must be between 4 and 16, got {}",
+            base_lora_rank
+        );
     }
     if ewc_lambda < 0.0 {
         pgrx::error!("ewc_lambda must be non-negative, got {}", ewc_lambda);
     }
     if !(10..=1000).contains(&pattern_clusters) {
-        pgrx::error!("pattern_clusters must be between 10 and 1000, got {}", pattern_clusters);
+        pgrx::error!(
+            "pattern_clusters must be between 10 and 1000, got {}",
+            pattern_clusters
+        );
     }
 
     // Store in state
@@ -129,7 +144,10 @@ mod tests {
     #[pg_test]
     fn test_dag_set_attention() {
         dag_set_attention("topological");
-        assert_eq!(crate::dag::state::DAG_STATE.get_attention_mechanism(), "topological");
+        assert_eq!(
+            crate::dag::state::DAG_STATE.get_attention_mechanism(),
+            "topological"
+        );
     }
 
     #[pg_test]

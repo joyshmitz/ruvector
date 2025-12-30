@@ -182,11 +182,7 @@ fn qudag_create_proposal(
 
 /// Vote on proposal
 #[pg_extern]
-fn qudag_vote(
-    proposal_id: &str,
-    vote_choice: &str,
-    stake_weight: f64,
-) -> pgrx::JsonB {
+fn qudag_vote(proposal_id: &str, vote_choice: &str, stake_weight: f64) -> pgrx::JsonB {
     let choice = match vote_choice.to_lowercase().as_str() {
         "for" | "yes" => "for",
         "against" | "no" => "against",

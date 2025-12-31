@@ -855,6 +855,67 @@ const TOOLS = [
       },
       required: ['key']
     }
+  },
+  {
+    name: 'hooks_batch_learn',
+    description: 'Record multiple learning experiences in batch for efficiency. Processes an array of experiences at once.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        experiences: {
+          type: 'array',
+          description: 'Array of experiences to learn from',
+          items: {
+            type: 'object',
+            properties: {
+              state: { type: 'string', description: 'State identifier' },
+              action: { type: 'string', description: 'Action taken' },
+              reward: { type: 'number', description: 'Reward (-1 to 1)' },
+              nextState: { type: 'string', description: 'Next state (optional)' },
+              done: { type: 'boolean', description: 'Episode ended' }
+            },
+            required: ['state', 'action', 'reward']
+          }
+        },
+        task: { type: 'string', description: 'Task type for all experiences', default: 'agent-routing' }
+      },
+      required: ['experiences']
+    }
+  },
+  {
+    name: 'hooks_subscribe_snapshot',
+    description: 'Get current state snapshot for subscription-style updates. Returns counts and deltas since last call.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        events: {
+          type: 'array',
+          description: 'Event types to check',
+          items: { type: 'string', enum: ['learn', 'compress', 'route', 'memory'] },
+          default: ['learn', 'route']
+        },
+        lastState: {
+          type: 'object',
+          description: 'Previous state for delta calculation',
+          properties: {
+            patterns: { type: 'number' },
+            memories: { type: 'number' },
+            trajectories: { type: 'number' },
+            updates: { type: 'number' }
+          }
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'hooks_watch_status',
+    description: 'Get file watching status and recent changes detected',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
   }
 ];
 
@@ -1859,6 +1920,149 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           key: args.key,
           vector: Array.from(vector),
           dimension: vector.length
+        }, null, 2) }] };
+      }
+
+      case 'hooks_batch_learn': {
+        let LearningEngine;
+        try {
+          LearningEngine = require('../dist/core/learning-engine').default;
+        } catch (e) {
+          return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'LearningEngine not available' }) }] };
+        }
+
+        const experiences = args.experiences || [];
+        if (!Array.isArray(experiences) || experiences.length === 0) {
+          return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'experiences must be a non-empty array' }) }] };
+        }
+
+        const task = args.task || 'agent-routing';
+        const engine = new LearningEngine();
+
+        // Import existing learning data
+        if (intel.data.learning) {
+          engine.import(intel.data.learning);
+        }
+
+        const results = [];
+        let totalReward = 0;
+
+        for (const exp of experiences) {
+          const experience = {
+            state: exp.state,
+            action: exp.action,
+            reward: exp.reward ?? 0.5,
+            nextState: exp.nextState ?? exp.state,
+            done: exp.done ?? false,
+            timestamp: Date.now()
+          };
+
+          const delta = engine.update(task, experience);
+          totalReward += experience.reward;
+          results.push({ state: exp.state, action: exp.action, reward: experience.reward, delta });
+        }
+
+        // Save
+        intel.data.learning = engine.export();
+        intel.save();
+
+        const stats = engine.getStatsSummary();
+        return { content: [{ type: 'text', text: JSON.stringify({
+          success: true,
+          processed: experiences.length,
+          avgReward: totalReward / experiences.length,
+          results,
+          stats: {
+            bestAlgorithm: stats.bestAlgorithm,
+            totalUpdates: stats.totalUpdates,
+            avgReward: stats.avgReward
+          }
+        }, null, 2) }] };
+      }
+
+      case 'hooks_subscribe_snapshot': {
+        const events = args.events || ['learn', 'route'];
+        const lastState = args.lastState || { patterns: 0, memories: 0, trajectories: 0, updates: 0 };
+
+        const stats = intel.data.stats || {};
+        const learning = intel.data.learning?.stats || {};
+
+        // Calculate current state
+        let totalUpdates = 0;
+        let bestAlgorithm = null;
+        let bestAvgReward = -Infinity;
+
+        Object.entries(learning).forEach(([algo, data]) => {
+          if (data.updates) {
+            totalUpdates += data.updates;
+            if (data.avgReward > bestAvgReward) {
+              bestAvgReward = data.avgReward;
+              bestAlgorithm = algo;
+            }
+          }
+        });
+
+        const currentState = {
+          patterns: stats.total_patterns || 0,
+          memories: stats.total_memories || 0,
+          trajectories: stats.total_trajectories || 0,
+          updates: totalUpdates
+        };
+
+        // Calculate deltas
+        const deltas = {
+          patterns: currentState.patterns - (lastState.patterns || 0),
+          memories: currentState.memories - (lastState.memories || 0),
+          trajectories: currentState.trajectories - (lastState.trajectories || 0),
+          updates: currentState.updates - (lastState.updates || 0)
+        };
+
+        const hasChanges = Object.values(deltas).some(d => d > 0);
+
+        // Build events array
+        const eventsList = [];
+        if (events.includes('learn') && deltas.patterns > 0) {
+          eventsList.push({ type: 'learn', subtype: 'pattern', delta: deltas.patterns, total: currentState.patterns });
+        }
+        if (events.includes('learn') && deltas.updates > 0) {
+          eventsList.push({ type: 'learn', subtype: 'algorithm', delta: deltas.updates, total: currentState.updates, bestAlgorithm });
+        }
+        if (events.includes('memory') && deltas.memories > 0) {
+          eventsList.push({ type: 'memory', delta: deltas.memories, total: currentState.memories });
+        }
+        if (events.includes('route') && deltas.trajectories > 0) {
+          eventsList.push({ type: 'route', delta: deltas.trajectories, total: currentState.trajectories });
+        }
+
+        return { content: [{ type: 'text', text: JSON.stringify({
+          success: true,
+          hasChanges,
+          currentState,
+          deltas,
+          events: eventsList,
+          bestAlgorithm,
+          timestamp: Date.now()
+        }, null, 2) }] };
+      }
+
+      case 'hooks_watch_status': {
+        // Return current intelligence state as a "watch" status
+        const stats = intel.data.stats || {};
+        const patterns = Object.keys(intel.data.patterns || {});
+        const recentPatterns = patterns.slice(-5);
+
+        return { content: [{ type: 'text', text: JSON.stringify({
+          success: true,
+          watching: true,
+          stats: {
+            totalPatterns: stats.total_patterns || 0,
+            totalMemories: stats.total_memories || 0,
+            totalTrajectories: stats.total_trajectories || 0,
+            sessionCount: stats.session_count || 0
+          },
+          recentPatterns,
+          lastUpdate: stats.last_session || Date.now(),
+          tip: 'Use hooks_subscribe_snapshot with lastState for delta tracking'
         }, null, 2) }] };
       }
 

@@ -4429,6 +4429,292 @@ hooksCmd.command('learn')
     console.log(JSON.stringify(result));
   });
 
+// Batch learn - process multiple experiences at once
+hooksCmd.command('batch-learn')
+  .description('Record multiple learning experiences in batch for efficiency')
+  .option('-f, --file <file>', 'JSON file with experiences array')
+  .option('-d, --data <json>', 'Inline JSON array of experiences')
+  .option('-t, --task <type>', 'Task type for all experiences', 'agent-routing')
+  .action(async (opts) => {
+    if (!loadLearningModules()) {
+      console.log(JSON.stringify({ success: false, error: 'Learning modules not available' }));
+      return;
+    }
+
+    let experiences = [];
+
+    // Load from file or inline
+    if (opts.file) {
+      try {
+        const content = fs.readFileSync(opts.file, 'utf-8');
+        experiences = JSON.parse(content);
+      } catch (e) {
+        console.log(JSON.stringify({ success: false, error: `Failed to read file: ${e.message}` }));
+        return;
+      }
+    } else if (opts.data) {
+      try {
+        experiences = JSON.parse(opts.data);
+      } catch (e) {
+        console.log(JSON.stringify({ success: false, error: `Invalid JSON: ${e.message}` }));
+        return;
+      }
+    } else {
+      console.log(JSON.stringify({ success: false, error: 'Provide --file or --data' }));
+      return;
+    }
+
+    if (!Array.isArray(experiences)) {
+      experiences = [experiences];
+    }
+
+    const dataPath = path.join(process.cwd(), '.ruvector', 'intelligence.json');
+    let data = {};
+    try {
+      if (fs.existsSync(dataPath)) {
+        data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+      }
+    } catch (e) {}
+
+    const engine = new LearningEngineClass();
+    if (data.learning) {
+      engine.import(data.learning);
+    }
+
+    const results = [];
+    let totalReward = 0;
+
+    for (const exp of experiences) {
+      const experience = {
+        state: exp.state,
+        action: exp.action,
+        reward: exp.reward ?? 0.5,
+        nextState: exp.nextState ?? exp.state,
+        done: exp.done ?? false,
+        timestamp: exp.timestamp ?? Date.now()
+      };
+
+      const delta = engine.update(opts.task, experience);
+      totalReward += experience.reward;
+      results.push({ state: exp.state, action: exp.action, delta });
+    }
+
+    // Save
+    data.learning = engine.export();
+    fs.mkdirSync(path.dirname(dataPath), { recursive: true });
+    fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
+
+    const stats = engine.getStatsSummary();
+    console.log(JSON.stringify({
+      success: true,
+      processed: experiences.length,
+      avgReward: totalReward / experiences.length,
+      results,
+      stats: {
+        bestAlgorithm: stats.bestAlgorithm,
+        totalUpdates: stats.totalUpdates,
+        avgReward: stats.avgReward
+      }
+    }));
+  });
+
+// Subscribe to learning updates - stream real-time learning events
+hooksCmd.command('subscribe')
+  .description('Subscribe to real-time learning updates (streaming)')
+  .option('-e, --events <types>', 'Event types to subscribe to (learn,compress,route,memory)', 'learn,route')
+  .option('-f, --format <fmt>', 'Output format (json, text)', 'json')
+  .option('--poll <ms>', 'Poll interval in ms', parseInt, 1000)
+  .action(async (opts) => {
+    const events = opts.events.split(',').map(e => e.trim());
+    const dataPath = path.join(process.cwd(), '.ruvector', 'intelligence.json');
+
+    let lastStats = { patterns: 0, memories: 0, trajectories: 0 };
+    let lastLearning = { totalUpdates: 0 };
+
+    console.error(chalk.cyan('🔴 Subscribed to learning updates. Press Ctrl+C to stop.\n'));
+    console.error(chalk.dim(`   Events: ${events.join(', ')}`));
+    console.error(chalk.dim(`   Poll interval: ${opts.poll}ms\n`));
+
+    const emit = (type, data) => {
+      const event = { type, timestamp: Date.now(), data };
+      if (opts.format === 'json') {
+        console.log(JSON.stringify(event));
+      } else {
+        const icon = { learn: '🧠', compress: '📦', route: '🎯', memory: '💾' }[type] || '📡';
+        console.log(`${icon} [${type}] ${JSON.stringify(data)}`);
+      }
+    };
+
+    const check = () => {
+      try {
+        if (!fs.existsSync(dataPath)) return;
+
+        const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+        const stats = data.stats || {};
+        const learning = data.learning?.stats || {};
+
+        // Check for new patterns (learn events)
+        if (events.includes('learn')) {
+          const currentPatterns = stats.total_patterns || 0;
+          if (currentPatterns > lastStats.patterns) {
+            emit('learn', {
+              type: 'pattern',
+              newPatterns: currentPatterns - lastStats.patterns,
+              total: currentPatterns
+            });
+            lastStats.patterns = currentPatterns;
+          }
+
+          // Check learning engine updates
+          let totalUpdates = 0;
+          Object.values(learning).forEach(algo => {
+            if (algo.updates) totalUpdates += algo.updates;
+          });
+          if (totalUpdates > lastLearning.totalUpdates) {
+            const bestAlgo = Object.entries(learning)
+              .filter(([, v]) => v.updates > 0)
+              .sort((a, b) => b[1].avgReward - a[1].avgReward)[0];
+            emit('learn', {
+              type: 'algorithm_update',
+              newUpdates: totalUpdates - lastLearning.totalUpdates,
+              totalUpdates,
+              bestAlgorithm: bestAlgo?.[0] || 'none'
+            });
+            lastLearning.totalUpdates = totalUpdates;
+          }
+        }
+
+        // Check for new memories
+        if (events.includes('memory')) {
+          const currentMemories = stats.total_memories || 0;
+          if (currentMemories > lastStats.memories) {
+            emit('memory', {
+              newMemories: currentMemories - lastStats.memories,
+              total: currentMemories
+            });
+            lastStats.memories = currentMemories;
+          }
+        }
+
+        // Check for new trajectories (route events)
+        if (events.includes('route')) {
+          const currentTrajectories = stats.total_trajectories || 0;
+          if (currentTrajectories > lastStats.trajectories) {
+            emit('route', {
+              newTrajectories: currentTrajectories - lastStats.trajectories,
+              total: currentTrajectories
+            });
+            lastStats.trajectories = currentTrajectories;
+          }
+        }
+
+      } catch (e) {
+        // Ignore read errors during updates
+      }
+    };
+
+    // Initial state
+    check();
+
+    // Poll for updates
+    const interval = setInterval(check, opts.poll);
+
+    // Handle graceful shutdown
+    process.on('SIGINT', () => {
+      clearInterval(interval);
+      console.error(chalk.dim('\n\n👋 Subscription ended.'));
+      process.exit(0);
+    });
+
+    // Keep alive
+    await new Promise(() => {});
+  });
+
+// Watch and learn - monitor file changes and auto-learn
+hooksCmd.command('watch')
+  .description('Watch for changes and auto-learn patterns in real-time')
+  .option('-p, --path <dir>', 'Directory to watch', '.')
+  .option('-i, --ignore <patterns>', 'Patterns to ignore (comma-separated)', 'node_modules,dist,.git')
+  .option('--dry-run', 'Show what would be learned without saving')
+  .action(async (opts) => {
+    const watchDir = path.resolve(opts.path);
+    const ignorePatterns = opts.ignore.split(',').map(p => p.trim());
+
+    console.error(chalk.cyan(`👁️  Watching ${watchDir} for changes...\n`));
+    console.error(chalk.dim(`   Ignoring: ${ignorePatterns.join(', ')}`));
+    console.error(chalk.dim(`   Press Ctrl+C to stop.\n`));
+
+    const intel = new Intelligence({ skipEngine: true });
+    let lastEdit = null;
+    let editCount = 0;
+
+    const shouldIgnore = (filePath) => {
+      return ignorePatterns.some(pattern => filePath.includes(pattern));
+    };
+
+    const processChange = (eventType, filename) => {
+      if (!filename || shouldIgnore(filename)) return;
+
+      const ext = path.extname(filename);
+      const state = `edit:${ext || 'unknown'}`;
+      const now = Date.now();
+
+      // Determine likely action based on file type
+      const agentMapping = {
+        '.ts': 'typescript-developer',
+        '.js': 'coder',
+        '.rs': 'rust-developer',
+        '.py': 'python-developer',
+        '.go': 'go-developer',
+        '.md': 'documentation',
+        '.json': 'config-manager',
+        '.yaml': 'devops-engineer',
+        '.yml': 'devops-engineer',
+      };
+      const agent = agentMapping[ext] || 'coder';
+
+      // Co-edit pattern detection
+      if (lastEdit && lastEdit.file !== filename && (now - lastEdit.time) < 60000) {
+        // Files edited within 1 minute are co-edits
+        const coEditKey = [lastEdit.file, filename].sort().join('|');
+        if (!opts.dryRun) {
+          if (!intel.data.sequences) intel.data.sequences = {};
+          if (!intel.data.sequences[lastEdit.file]) intel.data.sequences[lastEdit.file] = [];
+          const existing = intel.data.sequences[lastEdit.file].find(s => s.file === filename);
+          if (existing) {
+            existing.score++;
+          } else {
+            intel.data.sequences[lastEdit.file].push({ file: filename, score: 1 });
+          }
+        }
+        console.log(chalk.yellow(`  🔗 Co-edit: ${path.basename(lastEdit.file)} → ${path.basename(filename)}`));
+      }
+
+      // Update Q-value for this file type
+      if (!opts.dryRun) {
+        intel.updateQ(state, agent, 0.5);
+        intel.save();
+      }
+
+      editCount++;
+      console.log(chalk.green(`  ✏️  [${editCount}] ${filename} → ${agent}`));
+
+      lastEdit = { file: filename, time: now };
+    };
+
+    // Use fs.watch for real-time monitoring
+    const watcher = fs.watch(watchDir, { recursive: true }, processChange);
+
+    process.on('SIGINT', () => {
+      watcher.close();
+      console.error(chalk.dim(`\n\n📊 Learned from ${editCount} file changes.`));
+      process.exit(0);
+    });
+
+    // Keep alive
+    await new Promise(() => {});
+  });
+
 // ============================================
 // END NEW CAPABILITY COMMANDS
 // ============================================

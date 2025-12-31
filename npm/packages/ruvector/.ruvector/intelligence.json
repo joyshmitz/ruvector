@@ -121,5 +121,13 @@
     "rewardHistory": [
       1
     ]
+  },
+  "stats": {
+    "total_patterns": 0,
+    "total_memories": 0,
+    "total_trajectories": 0,
+    "total_errors": 0,
+    "session_count": 0,
+    "last_session": 0
   }
 }

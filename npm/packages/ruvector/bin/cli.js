@@ -2609,8 +2609,13 @@ class Intelligence {
   }
 
   sessionEnd() {
-    const duration = this.now() - (this.sessionStartTime || this.data.stats.last_session);
-    const actions = this.data.trajectories.filter(t => t.timestamp >= this.data.stats.last_session).length;
+    // Ensure stats exists with defaults
+    if (!this.data.stats) {
+      this.data.stats = { total_patterns: 0, total_memories: 0, total_trajectories: 0, total_errors: 0, session_count: 0, last_session: 0 };
+    }
+    const lastSession = this.data.stats.last_session || 0;
+    const duration = this.now() - (this.sessionStartTime || lastSession);
+    const actions = (this.data.trajectories || []).filter(t => t.timestamp >= lastSession).length;
 
     // Force learning cycle (only if engine already initialized)
     const eng = this.getEngineIfReady();

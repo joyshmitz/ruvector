@@ -1,0 +1,52 @@
+[package]
+name = "ruvector-hyperbolic-hnsw"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MIT"
+authors = ["RuVector Team"]
+repository = "https://github.com/ruvnet/ruvector"
+description = "Hyperbolic (Poincaré ball) embeddings with HNSW integration for hierarchy-aware vector search"
+keywords = ["hyperbolic", "poincare", "hnsw", "vector-search", "embeddings"]
+categories = ["algorithms", "science", "mathematics"]
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = ["simd", "parallel"]
+simd = []
+parallel = ["rayon"]
+wasm = []
+
+[dependencies]
+# Math and numerics (exact versions as specified)
+nalgebra = "0.34.1"
+ndarray = "0.17.1"
+
+# Parallel processing
+rayon = { version = "1.10", optional = true }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+
+# Random number generation
+rand = "0.8"
+rand_distr = "0.4"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+approx = "0.5"
+proptest = "1.5"
+
+[[bench]]
+name = "hyperbolic_bench"
+harness = false
+
+[[test]]
+name = "math_tests"
+path = "tests/math_tests.rs"

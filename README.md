@@ -476,6 +476,35 @@ RETURN related
 
 </details>
 
+
+<details>
+<summary>📦 npm Packages (45+ Packages)</summary>
+
+#### ✅ Published
+
+| Package | Description | Version | Downloads |
+|---------|-------------|---------|-----------|
+| [ruvector](https://www.npmjs.com/package/ruvector) | All-in-one CLI & package | [![npm](https://img.shields.io/npm/v/ruvector.svg)](https://www.npmjs.com/package/ruvector) | [![downloads](https://img.shields.io/npm/dt/ruvector.svg)](https://www.npmjs.com/package/ruvector) |
+| [@ruvector/core](https://www.npmjs.com/package/@ruvector/core) | Core vector database | [![npm](https://img.shields.io/npm/v/@ruvector/core.svg)](https://www.npmjs.com/package/@ruvector/core) | [![downloads](https://img.shields.io/npm/dt/@ruvector/core.svg)](https://www.npmjs.com/package/@ruvector/core) |
+| [@ruvector/gnn](https://www.npmjs.com/package/@ruvector/gnn) | Graph Neural Network layers | [![npm](https://img.shields.io/npm/v/@ruvector/gnn.svg)](https://www.npmjs.com/package/@ruvector/gnn) | [![downloads](https://img.shields.io/npm/dt/@ruvector/gnn.svg)](https://www.npmjs.com/package/@ruvector/gnn) |
+| [@ruvector/graph-node](https://www.npmjs.com/package/@ruvector/graph-node) | Hypergraph with Cypher | [![npm](https://img.shields.io/npm/v/@ruvector/graph-node.svg)](https://www.npmjs.com/package/@ruvector/graph-node) | [![downloads](https://img.shields.io/npm/dt/@ruvector/graph-node.svg)](https://www.npmjs.com/package/@ruvector/graph-node) |
+| [@ruvector/tiny-dancer](https://www.npmjs.com/package/@ruvector/tiny-dancer) | FastGRNN AI routing | [![npm](https://img.shields.io/npm/v/@ruvector/tiny-dancer.svg)](https://www.npmjs.com/package/@ruvector/tiny-dancer) | [![downloads](https://img.shields.io/npm/dt/@ruvector/tiny-dancer.svg)](https://www.npmjs.com/package/@ruvector/tiny-dancer) |
+| [@ruvector/router](https://www.npmjs.com/package/@ruvector/router) | Semantic router + HNSW | [![npm](https://img.shields.io/npm/v/@ruvector/router.svg)](https://www.npmjs.com/package/@ruvector/router) | [![downloads](https://img.shields.io/npm/dt/@ruvector/router.svg)](https://www.npmjs.com/package/@ruvector/router) |
+| [@ruvector/attention](https://www.npmjs.com/package/@ruvector/attention) | 39 attention mechanisms | [![npm](https://img.shields.io/npm/v/@ruvector/attention.svg)](https://www.npmjs.com/package/@ruvector/attention) | [![downloads](https://img.shields.io/npm/dt/@ruvector/attention.svg)](https://www.npmjs.com/package/@ruvector/attention) |
+| [@ruvector/sona](https://www.npmjs.com/package/@ruvector/sona) | Self-Optimizing Neural Architecture | [![npm](https://img.shields.io/npm/v/@ruvector/sona.svg)](https://www.npmjs.com/package/@ruvector/sona) | [![downloads](https://img.shields.io/npm/dt/@ruvector/sona.svg)](https://www.npmjs.com/package/@ruvector/sona) |
+| [@ruvector/ruvllm](https://www.npmjs.com/package/@ruvector/ruvllm) | LLM orchestration + SONA | [![npm](https://img.shields.io/npm/v/@ruvector/ruvllm.svg)](https://www.npmjs.com/package/@ruvector/ruvllm) | [![downloads](https://img.shields.io/npm/dt/@ruvector/ruvllm.svg)](https://www.npmjs.com/package/@ruvector/ruvllm) |
+| [@ruvector/cli](https://www.npmjs.com/package/@ruvector/cli) | CLI + self-learning hooks | [![npm](https://img.shields.io/npm/v/@ruvector/cli.svg)](https://www.npmjs.com/package/@ruvector/cli) | [![downloads](https://img.shields.io/npm/dt/@ruvector/cli.svg)](https://www.npmjs.com/package/@ruvector/cli) |
+| [@ruvector/rvlite](https://www.npmjs.com/package/@ruvector/rvlite) | SQLite-style edge DB | [![npm](https://img.shields.io/npm/v/@ruvector/rvlite.svg)](https://www.npmjs.com/package/@ruvector/rvlite) | [![downloads](https://img.shields.io/npm/dt/@ruvector/rvlite.svg)](https://www.npmjs.com/package/@ruvector/rvlite) |
+| [@ruvector/cluster](https://www.npmjs.com/package/@ruvector/cluster) | Distributed clustering | [![npm](https://img.shields.io/npm/v/@ruvector/cluster.svg)](https://www.npmjs.com/package/@ruvector/cluster) | [![downloads](https://img.shields.io/npm/dt/@ruvector/cluster.svg)](https://www.npmjs.com/package/@ruvector/cluster) |
+| [@ruvector/server](https://www.npmjs.com/package/@ruvector/server) | HTTP/gRPC server | [![npm](https://img.shields.io/npm/v/@ruvector/server.svg)](https://www.npmjs.com/package/@ruvector/server) | [![downloads](https://img.shields.io/npm/dt/@ruvector/server.svg)](https://www.npmjs.com/package/@ruvector/server) |
+| [@ruvector/rudag](https://www.npmjs.com/package/@ruvector/rudag) | Self-learning DAG | [![npm](https://img.shields.io/npm/v/@ruvector/rudag.svg)](https://www.npmjs.com/package/@ruvector/rudag) | [![downloads](https://img.shields.io/npm/dt/@ruvector/rudag.svg)](https://www.npmjs.com/package/@ruvector/rudag) |
+| [@ruvector/burst-scaling](https://www.npmjs.com/package/@ruvector/burst-scaling) | 10-50x burst scaling | [![npm](https://img.shields.io/npm/v/@ruvector/burst-scaling.svg)](https://www.npmjs.com/package/@ruvector/burst-scaling) | [![downloads](https://img.shields.io/npm/dt/@ruvector/burst-scaling.svg)](https://www.npmjs.com/package/@ruvector/burst-scaling) |
+| [@ruvector/spiking-neural](https://www.npmjs.com/package/@ruvector/spiking-neural) | Spiking neural networks | [![npm](https://img.shields.io/npm/v/@ruvector/spiking-neural.svg)](https://www.npmjs.com/package/@ruvector/spiking-neural) | [![downloads](https://img.shields.io/npm/dt/@ruvector/spiking-neural.svg)](https://www.npmjs.com/package/@ruvector/spiking-neural) |
+| [@ruvector/raft](https://www.npmjs.com/package/@ruvector/raft) | Raft consensus for distributed systems | [![npm](https://img.shields.io/npm/v/@ruvector/raft.svg)](https://www.npmjs.com/package/@ruvector/raft) | [![downloads](https://img.shields.io/npm/dt/@ruvector/raft.svg)](https://www.npmjs.com/package/@ruvector/raft) |
+| [@ruvector/replication](https://www.npmjs.com/package/@ruvector/replication) | Multi-master replication with vector clocks | [![npm](https://img.shields.io/npm/v/@ruvector/replication.svg)](https://www.npmjs.com/package/@ruvector/replication) | [![downloads](https://img.shields.io/npm/dt/@ruvector/replication.svg)](https://www.npmjs.com/package/@ruvector/replication) |
+| [@ruvector/scipix](https://www.npmjs.com/package/@ruvector/scipix) | Scientific OCR (LaTeX/MathML extraction) | [![npm](https://img.shields.io/npm/v/@ruvector/scipix.svg)](https://www.npmjs.com/package/@ruvector/scipix) | [![downloads](https://img.shields.io/npm/dt/@ruvector/scipix.svg)](https://www.npmjs.com/package/@ruvector/scipix) |
+</details>
+
 <details>
 <summary>🦀 Rust Crates (63 Packages)</summary>
 
@@ -539,151 +568,6 @@ cargo add ruvllm --features inference-cuda   # NVIDIA GPU
 wget https://huggingface.co/ruv/ruvltra/resolve/main/ruvltra-small-0.5b-q4_k_m.gguf
 ```
 
-<details>
-<summary><strong>🎓 RuvLLM Training & Fine-Tuning Tutorials</strong></summary>
-
-#### Hybrid Routing (90% Accuracy)
-
-RuvLTRA achieves **90% routing accuracy** using a keyword-first strategy with embedding fallback:
-
-```javascript
-// Optimal routing: Keywords first, embeddings as tiebreaker
-function routeTask(task, taskEmbedding, agentEmbeddings) {
-  const keywordScores = getKeywordScores(task);
-  const maxKw = Math.max(...Object.values(keywordScores));
-
-  if (maxKw > 0) {
-    const candidates = Object.entries(keywordScores)
-      .filter(([_, score]) => score === maxKw)
-      .map(([agent]) => agent);
-
-    if (candidates.length === 1) return { agent: candidates[0] };
-    return pickByEmbedding(candidates, taskEmbedding, agentEmbeddings);
-  }
-
-  return embeddingSimilarity(taskEmbedding, agentEmbeddings);
-}
-```
-
-Run the benchmark: `node npm/packages/ruvllm/scripts/hybrid-model-compare.js`
-
-#### Generate Training Data
-
-```bash
-# Using CLI (recommended)
-npx @ruvector/ruvllm train stats              # View dataset statistics
-npx @ruvector/ruvllm train dataset            # Export training data
-npx @ruvector/ruvllm train contrastive        # Run full training pipeline
-
-# With options
-npx @ruvector/ruvllm train dataset --output ./my-training
-npx @ruvector/ruvllm train contrastive --epochs 20 --batch-size 32 --lr 0.0001
-```
-
-**Programmatic API:**
-```javascript
-import { ContrastiveTrainer, generateTrainingDataset, getDatasetStats } from '@ruvector/ruvllm';
-
-const stats = getDatasetStats();
-console.log(`${stats.totalExamples} examples, ${stats.agentTypes} agent types`);
-
-const trainer = new ContrastiveTrainer({ epochs: 10, margin: 0.5 });
-trainer.addTriplet(anchor, anchorEmb, positive, positiveEmb, negative, negativeEmb, true);
-const result = trainer.train();
-trainer.exportTrainingData('./output');
-```
-
-#### Fine-Tune with LoRA
-
-```bash
-pip install transformers peft datasets accelerate
-
-python -m peft.lora_train \
-  --model_name Qwen/Qwen2.5-0.5B-Instruct \
-  --dataset ./data/training/routing-examples.jsonl \
-  --output_dir ./ruvltra-routing-lora \
-  --lora_r 8 --lora_alpha 16 \
-  --num_train_epochs 3 \
-  --learning_rate 2e-4
-```
-
-#### Convert to GGUF
-
-```bash
-# Merge LoRA weights
-python -c "
-from peft import PeftModel
-from transformers import AutoModelForCausalLM
-base = AutoModelForCausalLM.from_pretrained('Qwen/Qwen2.5-0.5B-Instruct')
-model = PeftModel.from_pretrained(base, './ruvltra-routing-lora')
-model.merge_and_unload().save_pretrained('./ruvltra-routing-merged')
-"
-
-# Convert and quantize
-python llama.cpp/convert_hf_to_gguf.py ./ruvltra-routing-merged --outfile ruvltra-routing-f16.gguf
-./llama.cpp/llama-quantize ruvltra-routing-f16.gguf ruvltra-routing-q4_k_m.gguf Q4_K_M
-```
-
-#### Contrastive Embedding Training
-
-**Using RuvLLM CLI (recommended):**
-```bash
-# Full contrastive training pipeline with triplet loss
-npx @ruvector/ruvllm train contrastive --output ./training-output
-
-# Exports: triplets.jsonl, embeddings.json, lora_config.json, train.sh
-```
-
-**Using Python (for GPU training):**
-```python
-from sentence_transformers import SentenceTransformer, losses, InputExample
-from torch.utils.data import DataLoader
-
-train_examples = [
-    InputExample(texts=["implement login", "build auth component"], label=1.0),
-    InputExample(texts=["implement login", "write unit tests"], label=0.0),
-]
-
-model = SentenceTransformer("Qwen/Qwen2.5-0.5B-Instruct")
-train_loss = losses.CosineSimilarityLoss(model)
-model.fit([(DataLoader(train_examples, batch_size=16), train_loss)], epochs=5)
-```
-
-**Resources:** [Issue #122](https://github.com/ruvnet/ruvector/issues/122) | [LoRA Paper](https://arxiv.org/abs/2106.09685) | [Sentence Transformers](https://www.sbert.net/docs/training/overview.html)
-
-#### Rust Training Module
-
-For production-scale dataset generation, use the Rust training module ([full docs](./crates/ruvllm/src/training/README.md)):
-
-```rust
-use ruvllm::training::{DatasetGenerator, DatasetConfig};
-
-let config = DatasetConfig {
-    examples_per_category: 100,
-    enable_augmentation: true,
-    seed: 42,
-    ..Default::default()
-};
-
-let dataset = DatasetGenerator::new(config).generate();
-let (train, val, test) = dataset.split(0.7, 0.15, 0.15, 42);
-dataset.export_jsonl("training.jsonl")?;
-```
-
-**Features:**
-- **5 agent categories**: Coder, Researcher, Security, Architecture, Reviewer (20% each)
-- **Model routing**: Haiku (simple) → Sonnet (moderate) → Opus (complex/security)
-- **Data augmentation**: Paraphrasing, complexity variations, domain transfer
-- **8 technical domains**: Web, Systems, DataScience, Mobile, DevOps, Security, Database, API
-- **Quality scores**: 0.80-0.96 based on template quality and category
-- **Performance**: ~10,000 examples/second, ~50 MB/s JSONL export
-
-```bash
-cargo run --example generate_claude_dataset --release
-# Outputs: train.jsonl, val.jsonl, test.jsonl, stats.json
-```
-
-</details>
 
 ### Distributed Systems
 
@@ -2095,33 +1979,6 @@ await db.sync('https://api.example.com/vectors');
 </details>
 
 <details>
-<summary>📦 npm Packages (45+ Packages)</summary>
-
-#### ✅ Published
-
-| Package | Description | Version | Downloads |
-|---------|-------------|---------|-----------|
-| [ruvector](https://www.npmjs.com/package/ruvector) | All-in-one CLI & package | [![npm](https://img.shields.io/npm/v/ruvector.svg)](https://www.npmjs.com/package/ruvector) | [![downloads](https://img.shields.io/npm/dt/ruvector.svg)](https://www.npmjs.com/package/ruvector) |
-| [@ruvector/core](https://www.npmjs.com/package/@ruvector/core) | Core vector database | [![npm](https://img.shields.io/npm/v/@ruvector/core.svg)](https://www.npmjs.com/package/@ruvector/core) | [![downloads](https://img.shields.io/npm/dt/@ruvector/core.svg)](https://www.npmjs.com/package/@ruvector/core) |
-| [@ruvector/gnn](https://www.npmjs.com/package/@ruvector/gnn) | Graph Neural Network layers | [![npm](https://img.shields.io/npm/v/@ruvector/gnn.svg)](https://www.npmjs.com/package/@ruvector/gnn) | [![downloads](https://img.shields.io/npm/dt/@ruvector/gnn.svg)](https://www.npmjs.com/package/@ruvector/gnn) |
-| [@ruvector/graph-node](https://www.npmjs.com/package/@ruvector/graph-node) | Hypergraph with Cypher | [![npm](https://img.shields.io/npm/v/@ruvector/graph-node.svg)](https://www.npmjs.com/package/@ruvector/graph-node) | [![downloads](https://img.shields.io/npm/dt/@ruvector/graph-node.svg)](https://www.npmjs.com/package/@ruvector/graph-node) |
-| [@ruvector/tiny-dancer](https://www.npmjs.com/package/@ruvector/tiny-dancer) | FastGRNN AI routing | [![npm](https://img.shields.io/npm/v/@ruvector/tiny-dancer.svg)](https://www.npmjs.com/package/@ruvector/tiny-dancer) | [![downloads](https://img.shields.io/npm/dt/@ruvector/tiny-dancer.svg)](https://www.npmjs.com/package/@ruvector/tiny-dancer) |
-| [@ruvector/router](https://www.npmjs.com/package/@ruvector/router) | Semantic router + HNSW | [![npm](https://img.shields.io/npm/v/@ruvector/router.svg)](https://www.npmjs.com/package/@ruvector/router) | [![downloads](https://img.shields.io/npm/dt/@ruvector/router.svg)](https://www.npmjs.com/package/@ruvector/router) |
-| [@ruvector/attention](https://www.npmjs.com/package/@ruvector/attention) | 39 attention mechanisms | [![npm](https://img.shields.io/npm/v/@ruvector/attention.svg)](https://www.npmjs.com/package/@ruvector/attention) | [![downloads](https://img.shields.io/npm/dt/@ruvector/attention.svg)](https://www.npmjs.com/package/@ruvector/attention) |
-| [@ruvector/sona](https://www.npmjs.com/package/@ruvector/sona) | Self-Optimizing Neural Architecture | [![npm](https://img.shields.io/npm/v/@ruvector/sona.svg)](https://www.npmjs.com/package/@ruvector/sona) | [![downloads](https://img.shields.io/npm/dt/@ruvector/sona.svg)](https://www.npmjs.com/package/@ruvector/sona) |
-| [@ruvector/ruvllm](https://www.npmjs.com/package/@ruvector/ruvllm) | LLM orchestration + SONA | [![npm](https://img.shields.io/npm/v/@ruvector/ruvllm.svg)](https://www.npmjs.com/package/@ruvector/ruvllm) | [![downloads](https://img.shields.io/npm/dt/@ruvector/ruvllm.svg)](https://www.npmjs.com/package/@ruvector/ruvllm) |
-| [@ruvector/cli](https://www.npmjs.com/package/@ruvector/cli) | CLI + self-learning hooks | [![npm](https://img.shields.io/npm/v/@ruvector/cli.svg)](https://www.npmjs.com/package/@ruvector/cli) | [![downloads](https://img.shields.io/npm/dt/@ruvector/cli.svg)](https://www.npmjs.com/package/@ruvector/cli) |
-| [@ruvector/rvlite](https://www.npmjs.com/package/@ruvector/rvlite) | SQLite-style edge DB | [![npm](https://img.shields.io/npm/v/@ruvector/rvlite.svg)](https://www.npmjs.com/package/@ruvector/rvlite) | [![downloads](https://img.shields.io/npm/dt/@ruvector/rvlite.svg)](https://www.npmjs.com/package/@ruvector/rvlite) |
-| [@ruvector/cluster](https://www.npmjs.com/package/@ruvector/cluster) | Distributed clustering | [![npm](https://img.shields.io/npm/v/@ruvector/cluster.svg)](https://www.npmjs.com/package/@ruvector/cluster) | [![downloads](https://img.shields.io/npm/dt/@ruvector/cluster.svg)](https://www.npmjs.com/package/@ruvector/cluster) |
-| [@ruvector/server](https://www.npmjs.com/package/@ruvector/server) | HTTP/gRPC server | [![npm](https://img.shields.io/npm/v/@ruvector/server.svg)](https://www.npmjs.com/package/@ruvector/server) | [![downloads](https://img.shields.io/npm/dt/@ruvector/server.svg)](https://www.npmjs.com/package/@ruvector/server) |
-| [@ruvector/rudag](https://www.npmjs.com/package/@ruvector/rudag) | Self-learning DAG | [![npm](https://img.shields.io/npm/v/@ruvector/rudag.svg)](https://www.npmjs.com/package/@ruvector/rudag) | [![downloads](https://img.shields.io/npm/dt/@ruvector/rudag.svg)](https://www.npmjs.com/package/@ruvector/rudag) |
-| [@ruvector/burst-scaling](https://www.npmjs.com/package/@ruvector/burst-scaling) | 10-50x burst scaling | [![npm](https://img.shields.io/npm/v/@ruvector/burst-scaling.svg)](https://www.npmjs.com/package/@ruvector/burst-scaling) | [![downloads](https://img.shields.io/npm/dt/@ruvector/burst-scaling.svg)](https://www.npmjs.com/package/@ruvector/burst-scaling) |
-| [@ruvector/spiking-neural](https://www.npmjs.com/package/@ruvector/spiking-neural) | Spiking neural networks | [![npm](https://img.shields.io/npm/v/@ruvector/spiking-neural.svg)](https://www.npmjs.com/package/@ruvector/spiking-neural) | [![downloads](https://img.shields.io/npm/dt/@ruvector/spiking-neural.svg)](https://www.npmjs.com/package/@ruvector/spiking-neural) |
-| [@ruvector/raft](https://www.npmjs.com/package/@ruvector/raft) | Raft consensus for distributed systems | [![npm](https://img.shields.io/npm/v/@ruvector/raft.svg)](https://www.npmjs.com/package/@ruvector/raft) | [![downloads](https://img.shields.io/npm/dt/@ruvector/raft.svg)](https://www.npmjs.com/package/@ruvector/raft) |
-| [@ruvector/replication](https://www.npmjs.com/package/@ruvector/replication) | Multi-master replication with vector clocks | [![npm](https://img.shields.io/npm/v/@ruvector/replication.svg)](https://www.npmjs.com/package/@ruvector/replication) | [![downloads](https://img.shields.io/npm/dt/@ruvector/replication.svg)](https://www.npmjs.com/package/@ruvector/replication) |
-| [@ruvector/scipix](https://www.npmjs.com/package/@ruvector/scipix) | Scientific OCR (LaTeX/MathML extraction) | [![npm](https://img.shields.io/npm/v/@ruvector/scipix.svg)](https://www.npmjs.com/package/@ruvector/scipix) | [![downloads](https://img.shields.io/npm/dt/@ruvector/scipix.svg)](https://www.npmjs.com/package/@ruvector/scipix) |
-
-<details>
 <summary>WASM & Utility Packages</summary>
 
 | Package | Description | Version | Downloads |
@@ -2233,6 +2090,153 @@ let shard = ring.get_shard("my-vector-key");
 
 // Multi-master replication with conflict resolution
 let sync = SyncManager::new(SyncMode::SemiSync { min_replicas: 2 });
+```
+
+</details>
+
+
+<details>
+<summary><strong>🎓 RuvLLM Training & Fine-Tuning Tutorials</strong></summary>
+
+#### Hybrid Routing (90% Accuracy)
+
+RuvLTRA achieves **90% routing accuracy** using a keyword-first strategy with embedding fallback:
+
+```javascript
+// Optimal routing: Keywords first, embeddings as tiebreaker
+function routeTask(task, taskEmbedding, agentEmbeddings) {
+  const keywordScores = getKeywordScores(task);
+  const maxKw = Math.max(...Object.values(keywordScores));
+
+  if (maxKw > 0) {
+    const candidates = Object.entries(keywordScores)
+      .filter(([_, score]) => score === maxKw)
+      .map(([agent]) => agent);
+
+    if (candidates.length === 1) return { agent: candidates[0] };
+    return pickByEmbedding(candidates, taskEmbedding, agentEmbeddings);
+  }
+
+  return embeddingSimilarity(taskEmbedding, agentEmbeddings);
+}
+```
+
+Run the benchmark: `node npm/packages/ruvllm/scripts/hybrid-model-compare.js`
+
+#### Generate Training Data
+
+```bash
+# Using CLI (recommended)
+npx @ruvector/ruvllm train stats              # View dataset statistics
+npx @ruvector/ruvllm train dataset            # Export training data
+npx @ruvector/ruvllm train contrastive        # Run full training pipeline
+
+# With options
+npx @ruvector/ruvllm train dataset --output ./my-training
+npx @ruvector/ruvllm train contrastive --epochs 20 --batch-size 32 --lr 0.0001
+```
+
+**Programmatic API:**
+```javascript
+import { ContrastiveTrainer, generateTrainingDataset, getDatasetStats } from '@ruvector/ruvllm';
+
+const stats = getDatasetStats();
+console.log(`${stats.totalExamples} examples, ${stats.agentTypes} agent types`);
+
+const trainer = new ContrastiveTrainer({ epochs: 10, margin: 0.5 });
+trainer.addTriplet(anchor, anchorEmb, positive, positiveEmb, negative, negativeEmb, true);
+const result = trainer.train();
+trainer.exportTrainingData('./output');
+```
+
+#### Fine-Tune with LoRA
+
+```bash
+pip install transformers peft datasets accelerate
+
+python -m peft.lora_train \
+  --model_name Qwen/Qwen2.5-0.5B-Instruct \
+  --dataset ./data/training/routing-examples.jsonl \
+  --output_dir ./ruvltra-routing-lora \
+  --lora_r 8 --lora_alpha 16 \
+  --num_train_epochs 3 \
+  --learning_rate 2e-4
+```
+
+#### Convert to GGUF
+
+```bash
+# Merge LoRA weights
+python -c "
+from peft import PeftModel
+from transformers import AutoModelForCausalLM
+base = AutoModelForCausalLM.from_pretrained('Qwen/Qwen2.5-0.5B-Instruct')
+model = PeftModel.from_pretrained(base, './ruvltra-routing-lora')
+model.merge_and_unload().save_pretrained('./ruvltra-routing-merged')
+"
+
+# Convert and quantize
+python llama.cpp/convert_hf_to_gguf.py ./ruvltra-routing-merged --outfile ruvltra-routing-f16.gguf
+./llama.cpp/llama-quantize ruvltra-routing-f16.gguf ruvltra-routing-q4_k_m.gguf Q4_K_M
+```
+
+#### Contrastive Embedding Training
+
+**Using RuvLLM CLI (recommended):**
+```bash
+# Full contrastive training pipeline with triplet loss
+npx @ruvector/ruvllm train contrastive --output ./training-output
+
+# Exports: triplets.jsonl, embeddings.json, lora_config.json, train.sh
+```
+
+**Using Python (for GPU training):**
+```python
+from sentence_transformers import SentenceTransformer, losses, InputExample
+from torch.utils.data import DataLoader
+
+train_examples = [
+    InputExample(texts=["implement login", "build auth component"], label=1.0),
+    InputExample(texts=["implement login", "write unit tests"], label=0.0),
+]
+
+model = SentenceTransformer("Qwen/Qwen2.5-0.5B-Instruct")
+train_loss = losses.CosineSimilarityLoss(model)
+model.fit([(DataLoader(train_examples, batch_size=16), train_loss)], epochs=5)
+```
+
+**Resources:** [Issue #122](https://github.com/ruvnet/ruvector/issues/122) | [LoRA Paper](https://arxiv.org/abs/2106.09685) | [Sentence Transformers](https://www.sbert.net/docs/training/overview.html)
+
+#### Rust Training Module
+
+For production-scale dataset generation, use the Rust training module ([full docs](./crates/ruvllm/src/training/README.md)):
+
+```rust
+use ruvllm::training::{DatasetGenerator, DatasetConfig};
+
+let config = DatasetConfig {
+    examples_per_category: 100,
+    enable_augmentation: true,
+    seed: 42,
+    ..Default::default()
+};
+
+let dataset = DatasetGenerator::new(config).generate();
+let (train, val, test) = dataset.split(0.7, 0.15, 0.15, 42);
+dataset.export_jsonl("training.jsonl")?;
+```
+
+**Features:**
+- **5 agent categories**: Coder, Researcher, Security, Architecture, Reviewer (20% each)
+- **Model routing**: Haiku (simple) → Sonnet (moderate) → Opus (complex/security)
+- **Data augmentation**: Paraphrasing, complexity variations, domain transfer
+- **8 technical domains**: Web, Systems, DataScience, Mobile, DevOps, Security, Database, API
+- **Quality scores**: 0.80-0.96 based on template quality and category
+- **Performance**: ~10,000 examples/second, ~50 MB/s JSONL export
+
+```bash
+cargo run --example generate_claude_dataset --release
+# Outputs: train.jsonl, val.jsonl, test.jsonl, stats.json
 ```
 
 </details>

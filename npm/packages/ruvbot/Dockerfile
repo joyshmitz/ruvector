@@ -41,6 +41,9 @@ COPY src/ ./src/
 # Build TypeScript
 RUN npm run build
 
+# Copy static files to dist
+RUN mkdir -p dist/api/public && cp -r src/api/public/* dist/api/public/ 2>/dev/null || true
+
 # -----------------------------------------------------------------------------
 # Stage 3: Production Runner
 # -----------------------------------------------------------------------------

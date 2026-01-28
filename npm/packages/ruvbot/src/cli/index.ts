@@ -31,8 +31,17 @@ import {
   createPluginsCommand,
   createAgentCommand,
 } from './commands/index.js';
+import {
+  createTemplatesCommand,
+  createDeployCommand,
+} from './commands/templates.js';
+import {
+  createChannelsCommand,
+  createWebhooksCommand,
+} from './commands/channels.js';
+import { createDeploymentCommand } from './commands/deploy.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.6';
 
 export function createCLI(): Command {
   const program = new Command();
@@ -390,6 +399,11 @@ RUVBOT_LOG_LEVEL=info
   program.addCommand(createSecurityCommand());
   program.addCommand(createPluginsCommand());
   program.addCommand(createAgentCommand());
+  program.addCommand(createTemplatesCommand());
+  program.addCommand(createDeployCommand());
+  program.addCommand(createChannelsCommand());
+  program.addCommand(createWebhooksCommand());
+  program.addCommand(createDeploymentCommand());
 
   // ============================================================================
   // Version Info

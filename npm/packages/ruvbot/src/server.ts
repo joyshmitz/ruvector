@@ -11,6 +11,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { URL } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import pino from 'pino';
 import { RuvBot, createRuvBot } from './RuvBot.js';
 import { createAIDefenceGuard, type AIDefenceConfig } from './security/AIDefenceGuard.js';
@@ -105,14 +107,97 @@ function sendError(res: ServerResponse, statusCode: number, message: string, cod
 }
 
 // ============================================================================
+// Static File Serving
+// ============================================================================
+
+function serveStaticFile(res: ServerResponse, filePath: string, contentType: string): boolean {
+  try {
+    const content = readFileSync(filePath, 'utf-8');
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=3600',
+    });
+    res.end(content);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getChatUIPath(): string {
+  // Try multiple locations for the chat UI
+  // Works in both development (src/) and production (dist/)
+  const cwd = process.cwd();
+  const possiblePaths = [
+    // Docker/Cloud Run paths (WORKDIR /app)
+    join(cwd, 'dist', 'api', 'public', 'index.html'),
+    // Development paths
+    join(cwd, 'src', 'api', 'public', 'index.html'),
+    // Production paths (ESM)
+    join(cwd, 'dist', 'esm', 'api', 'public', 'index.html'),
+    // When running from node_modules
+    join(cwd, 'node_modules', 'ruvbot', 'dist', 'api', 'public', 'index.html'),
+    join(cwd, 'node_modules', 'ruvbot', 'src', 'api', 'public', 'index.html'),
+    // Absolute paths (for Docker)
+    '/app/dist/api/public/index.html',
+    '/app/src/api/public/index.html',
+  ];
+
+  for (const p of possiblePaths) {
+    if (existsSync(p)) {
+      logger.info({ path: p }, 'Found chat UI');
+      return p;
+    }
+  }
+
+  logger.warn({ cwd, paths: possiblePaths }, 'Chat UI not found, using fallback');
+  return possiblePaths[0]; // Default to first path
+}
+
+// ============================================================================
 // Route Handlers
 // ============================================================================
+
+async function handleRoot(ctx: RequestContext): Promise<void> {
+  const { res } = ctx;
+  const chatUIPath = getChatUIPath();
+
+  if (existsSync(chatUIPath)) {
+    serveStaticFile(res, chatUIPath, 'text/html; charset=utf-8');
+  } else {
+    // Fallback: serve a simple redirect or message
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>RuvBot</title>
+        <style>
+          body { font-family: system-ui; background: #0a0a0f; color: #f0f0f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+          .container { text-align: center; }
+          h1 { font-size: 3rem; margin-bottom: 1rem; }
+          p { color: #a0a0b0; margin-bottom: 2rem; }
+          a { color: #6366f1; text-decoration: none; padding: 12px 24px; border: 1px solid #6366f1; border-radius: 8px; display: inline-block; }
+          a:hover { background: #6366f1; color: white; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>🤖 RuvBot</h1>
+          <p>Enterprise-grade AI Assistant</p>
+          <a href="/api/status">View API Status</a>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+}
 
 async function handleHealth(ctx: RequestContext): Promise<void> {
   const { res } = ctx;
   sendJSON(res, 200, {
     status: 'healthy',
-    version: '0.1.0',
+    version: '0.1.6',
     uptime: Math.floor((Date.now() - startTime) / 1000),
     timestamp: new Date().toISOString(),
   });
@@ -312,6 +397,7 @@ async function handleChat(ctx: RequestContext): Promise<void> {
 // ============================================================================
 
 const routes: Route[] = [
+  { method: 'GET', pattern: /^\/$/, handler: handleRoot },
   { method: 'GET', pattern: /^\/health$/, handler: handleHealth },
   { method: 'GET', pattern: /^\/ready$/, handler: handleReady },
   { method: 'GET', pattern: /^\/api\/status$/, handler: handleStatus },

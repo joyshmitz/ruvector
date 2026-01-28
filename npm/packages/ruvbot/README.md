@@ -17,6 +17,8 @@
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+- [Channel Integrations](#channel-integrations)
+- [Template Library](#template-library)
 - [API Usage](#api-usage)
 - [Security](#security-architecture-6-layers---why-this-matters)
 - [LLM Providers](#llm-providers---gemini-25-default)
@@ -86,29 +88,49 @@ RuvBot is a next-generation personal AI assistant powered by RuVector's WASM vec
 
 ## Quick Start
 
-### Install via curl
+### Install via curl (Recommended)
 
 ```bash
-curl -fsSL https://get.ruvector.dev/ruvbot | bash
+# Basic install
+curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/npm/packages/ruvbot/scripts/install.sh | bash
+
+# Install with interactive wizard
+RUVBOT_WIZARD=true curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/npm/packages/ruvbot/scripts/install.sh | bash
+
+# Install specific version
+RUVBOT_VERSION=0.1.3 curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/npm/packages/ruvbot/scripts/install.sh | bash
+
+# Install and deploy to Cloud Run
+RUVBOT_DEPLOY=cloudrun curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/npm/packages/ruvbot/scripts/install.sh | bash
+
+# Install with Slack channel dependencies
+RUVBOT_CHANNEL=slack curl -fsSL https://raw.githubusercontent.com/ruvnet/ruvector/main/npm/packages/ruvbot/scripts/install.sh | bash
 ```
 
-Or with custom settings:
+### Install Options (Environment Variables)
 
-```bash
-RUVBOT_VERSION=0.1.0 \
-RUVBOT_INSTALL_DIR=/opt/ruvbot \
-curl -fsSL https://get.ruvector.dev/ruvbot | bash
-```
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `RUVBOT_VERSION` | Specific version to install | `latest` |
+| `RUVBOT_GLOBAL` | Install globally | `true` |
+| `RUVBOT_INIT` | Initialize project after install | `false` |
+| `RUVBOT_CHANNEL` | Install channel deps: `slack`, `discord`, `telegram`, `all` | - |
+| `RUVBOT_DEPLOY` | Deploy to: `cloudrun`, `docker`, `k8s` | - |
+| `RUVBOT_WIZARD` | Run interactive setup wizard | `false` |
 
 ### Install via npm/npx
 
 ```bash
-# Run directly
-npx @ruvector/ruvbot start
+# Run directly (no install)
+npx ruvbot start
 
-# Or install globally
-npm install -g @ruvector/ruvbot
+# Install globally
+npm install -g ruvbot
 ruvbot start
+
+# Install locally
+npm install ruvbot
+npx ruvbot start
 ```
 
 ## Configuration
@@ -177,6 +199,11 @@ ruvbot init
 # Start the bot server
 ruvbot start [--port 3000] [--debug]
 
+# Start with a specific channel
+ruvbot start --channel slack
+ruvbot start --channel discord
+ruvbot start --channel telegram
+
 # Check status
 ruvbot status
 
@@ -184,11 +211,262 @@ ruvbot status
 ruvbot skills list
 ruvbot skills add <name>
 
+# Channel setup help
+ruvbot channels list
+ruvbot channels setup slack
+ruvbot channels setup discord
+ruvbot channels setup telegram
+
+# Template library
+ruvbot templates list
+ruvbot templates info <template-id>
+ruvbot deploy <template-id>
+
 # Run diagnostics
 ruvbot doctor
 
 # Show configuration
 ruvbot config --show
+```
+
+## Channel Integrations
+
+RuvBot supports multiple messaging platforms. Use `ruvbot channels setup <platform>` for interactive setup guides.
+
+### Slack Integration
+
+**Step 1: Create a Slack App**
+1. Go to https://api.slack.com/apps
+2. Click "Create New App" → "From Scratch"
+3. Name your app and select your workspace
+
+**Step 2: Configure Bot Permissions**
+Navigate to **OAuth & Permissions** and add these Bot Token Scopes:
+- `app_mentions:read` - Receive @mentions
+- `chat:write` - Send messages
+- `channels:history` - Read channel messages
+- `im:history` - Read direct messages
+- `reactions:write` - Add reactions
+- `files:read` - Access shared files
+
+**Step 3: Enable Socket Mode**
+1. Go to **Socket Mode** → Enable
+2. Create an App-Level Token with `connections:write` scope
+3. Save the `xapp-...` token
+
+**Step 4: Install & Get Tokens**
+1. Go to **Install App** → Install to Workspace
+2. Copy the Bot User OAuth Token (`xoxb-...`)
+3. Copy the Signing Secret from **Basic Information**
+
+**Step 5: Configure Environment**
+```bash
+export SLACK_BOT_TOKEN="xoxb-your-bot-token"
+export SLACK_SIGNING_SECRET="your-signing-secret"
+export SLACK_APP_TOKEN="xapp-your-app-token"
+
+# Start with Slack
+ruvbot start --channel slack
+```
+
+**Step 6: Enable Events (Optional)**
+For real-time events without Socket Mode:
+1. Go to **Event Subscriptions** → Enable
+2. Add Request URL: `https://your-ruvbot.run.app/slack/events`
+3. Subscribe to bot events: `message.channels`, `message.im`, `app_mention`
+
+---
+
+### Discord Integration
+
+**Step 1: Create a Discord Application**
+1. Go to https://discord.com/developers/applications
+2. Click "New Application" and name it
+
+**Step 2: Create a Bot**
+1. Go to **Bot** section → Add Bot
+2. Enable Privileged Gateway Intents:
+   - ✅ Message Content Intent
+   - ✅ Server Members Intent
+3. Copy the Bot Token (click "Reset Token" if needed)
+
+**Step 3: Get Application IDs**
+1. Copy **Application ID** from General Information
+2. Right-click your server → Copy Server ID (for guild-specific commands)
+
+**Step 4: Invite Bot to Server**
+1. Go to **OAuth2** → **URL Generator**
+2. Select scopes: `bot`, `applications.commands`
+3. Select permissions: `Send Messages`, `Read Message History`, `Add Reactions`, `Use Slash Commands`
+4. Open the generated URL to invite the bot
+
+**Step 5: Configure Environment**
+```bash
+export DISCORD_TOKEN="your-bot-token"
+export DISCORD_CLIENT_ID="your-application-id"
+export DISCORD_GUILD_ID="your-server-id"  # Optional, for testing
+
+# Start with Discord
+ruvbot start --channel discord
+```
+
+---
+
+### Telegram Integration
+
+**Step 1: Create a Bot with BotFather**
+1. Open Telegram and search for `@BotFather`
+2. Send `/newbot` command
+3. Follow prompts to name your bot
+4. Copy the HTTP API token (format: `123456789:ABC-DEF...`)
+
+**Step 2: Configure Environment**
+```bash
+export TELEGRAM_BOT_TOKEN="your-bot-token"
+
+# Start with Telegram
+ruvbot start --channel telegram
+```
+
+**Step 3: Test Your Bot**
+1. Search for your bot by username in Telegram
+2. Start a chat and send `/start`
+3. Send messages to interact with RuvBot
+
+**Production: Webhook Mode**
+For production deployments (Cloud Run, etc.), use webhook mode:
+```bash
+export TELEGRAM_BOT_TOKEN="your-bot-token"
+export TELEGRAM_WEBHOOK_URL="https://your-ruvbot.run.app/telegram/webhook"
+```
+
+---
+
+### Multi-Channel Configuration
+
+Run RuvBot with multiple channels simultaneously:
+
+```json
+{
+  "name": "my-ruvbot",
+  "channels": {
+    "slack": {
+      "enabled": true,
+      "token": "${SLACK_BOT_TOKEN}",
+      "signingSecret": "${SLACK_SIGNING_SECRET}",
+      "appToken": "${SLACK_APP_TOKEN}"
+    },
+    "discord": {
+      "enabled": true,
+      "token": "${DISCORD_TOKEN}",
+      "clientId": "${DISCORD_CLIENT_ID}"
+    },
+    "telegram": {
+      "enabled": true,
+      "token": "${TELEGRAM_BOT_TOKEN}"
+    }
+  }
+}
+```
+
+Install optional dependencies:
+```bash
+npm install @slack/bolt @slack/web-api discord.js telegraf
+```
+
+---
+
+### Cloud Run Channel Setup
+
+For Google Cloud Run deployments:
+
+```bash
+# Slack
+gcloud run services update ruvbot --set-env-vars="\
+SLACK_BOT_TOKEN=xoxb-...,\
+SLACK_SIGNING_SECRET=...,\
+SLACK_APP_TOKEN=xapp-..."
+
+# Discord
+gcloud run services update ruvbot --set-env-vars="\
+DISCORD_TOKEN=...,\
+DISCORD_CLIENT_ID=...,\
+DISCORD_GUILD_ID=..."
+
+# Telegram (webhook mode recommended)
+gcloud run services update ruvbot --set-env-vars="\
+TELEGRAM_BOT_TOKEN=...,\
+TELEGRAM_WEBHOOK_URL=https://ruvbot-xxx.run.app/telegram/webhook"
+```
+
+## Template Library
+
+RuvBot includes pre-built templates for deploying long-running agent patterns.
+
+### List Available Templates
+
+```bash
+ruvbot templates list
+ruvbot templates list --category advanced
+```
+
+### Available Templates
+
+| Category | Template | Description |
+|----------|----------|-------------|
+| **Practical** | `code-reviewer` | Automated code review with security scanning |
+| | `doc-generator` | Auto-generate project documentation |
+| | `test-generator` | Generate comprehensive test suites (TDD) |
+| **Intermediate** | `feature-swarm` | Parallel feature development with coordinated agents |
+| | `refactor-squad` | Coordinated codebase refactoring |
+| | `ci-cd-pipeline` | Automated build, test, and deployment |
+| **Advanced** | `self-learning-bot` | AI that improves from interactions |
+| | `research-swarm` | Distributed research across sources |
+| | `performance-optimizer` | Continuous performance monitoring |
+| **Exotic** | `byzantine-validator` | Byzantine fault-tolerant validation (33% fault tolerance) |
+| | `hive-mind` | Emergent collective intelligence with queen coordination |
+| | `multi-repo-coordinator` | Cross-repository change coordination |
+| | `adversarial-tester` | Red team vs blue team security testing |
+
+### Deploy a Template
+
+```bash
+# View template details
+ruvbot templates info hive-mind
+
+# Deploy a template
+ruvbot deploy code-reviewer --repo ./my-project
+
+# Deploy with options
+ruvbot deploy feature-swarm --name "auth-feature" --model google/gemini-2.0-flash-001
+
+# Dry run (preview without executing)
+ruvbot deploy hive-mind --dry-run
+```
+
+### Template Examples
+
+```bash
+# Code review with security scanning
+ruvbot deploy code-reviewer --repo ./my-project
+
+# Documentation generation
+ruvbot deploy doc-generator --output ./docs
+
+# Test suite generation with 80% coverage target
+ruvbot deploy test-generator --coverage 80
+
+# Feature development with coordinated swarm
+ruvbot deploy feature-swarm --feature "Add user authentication"
+
+# Research across multiple sources
+ruvbot deploy research-swarm --topic "vector databases"
+
+# Hive-mind for complex objectives
+ruvbot deploy hive-mind --objective "Build complete REST API"
+
+# Byzantine validation for critical operations
+ruvbot deploy byzantine-validator --quorum 4
 ```
 
 ## API Usage
@@ -503,7 +781,20 @@ const results = await memory.search('find important info', {
 });
 ```
 
-## Docker
+## Deployment
+
+RuvBot supports multiple deployment options from local development to enterprise cloud.
+
+### Quick Deploy Options
+
+| Method | Best For | Command |
+|--------|----------|---------|
+| **npx** | Quick testing | `npx ruvbot start` |
+| **Docker** | Containerized | `docker run -p 3000:3000 ruvector/ruvbot` |
+| **Cloud Run** | Serverless | `ruvbot deploy cloudrun` |
+| **Kubernetes** | Enterprise | `kubectl apply -f k8s/` |
+
+### Docker
 
 ```yaml
 # docker-compose.yml
@@ -514,11 +805,39 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     volumes:
       - ./data:/app/data
       - ./skills:/app/skills
+```
+
+### Docker with Webhooks
+
+```yaml
+# docker-compose.yml with webhook configuration
+version: '3.8'
+services:
+  ruvbot:
+    image: ruvector/ruvbot:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      # Outbound webhooks
+      - WEBHOOK_URL=https://your-service.com/callback
+      - WEBHOOK_SECRET=your-shared-secret
+      # Inbound webhook auth
+      - WEBHOOK_AUTH_TOKEN=your-auth-token
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 ```
 
 ## Google Cloud Deployment
@@ -565,6 +884,236 @@ terraform apply \
 - **Terraform**: Full infrastructure as code support
 
 See [ADR-013: GCP Deployment](docs/adr/ADR-013-gcp-deployment.md) for architecture details.
+
+### gcloud CLI Integration
+
+RuvBot includes native gcloud CLI integration for Cloud Run deployments.
+
+**Prerequisites:**
+```bash
+# Install gcloud CLI
+curl https://sdk.cloud.google.com | bash
+
+# Authenticate
+gcloud auth login
+
+# Set project
+gcloud config set project YOUR_PROJECT_ID
+```
+
+**Deploy with CLI:**
+```bash
+# Interactive deployment wizard
+ruvbot deploy-cloud wizard
+
+# Deploy to Cloud Run
+ruvbot deploy-cloud cloudrun --project my-project --region us-central1
+
+# Deploy with environment file
+ruvbot deploy-cloud cloudrun --env-file .env
+
+# Deploy to Docker
+ruvbot deploy-cloud docker --port 3000
+
+# Deploy to Kubernetes
+ruvbot deploy-cloud k8s --namespace production --replicas 3
+
+# Check deployment status
+ruvbot deploy-cloud status
+```
+
+**CLI Options:**
+
+| Command | Options | Description |
+|---------|---------|-------------|
+| `cloudrun` | `--project`, `--region`, `--service`, `--memory`, `--min-instances`, `--max-instances`, `--env-file` | Deploy to Cloud Run |
+| `docker` | `--name`, `--port`, `--detach`, `--env-file` | Deploy with Docker Compose |
+| `k8s` | `--namespace`, `--replicas`, `--env-file` | Deploy to Kubernetes |
+| `wizard` | - | Interactive deployment wizard |
+| `status` | `--platform` | Check deployment status |
+
+### Deploy with Channel Webhooks (Cloud Run)
+
+Complete Cloud Run deployment with all channel webhooks:
+
+```bash
+# Build and deploy
+gcloud run deploy ruvbot \
+  --source . \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars="\
+OPENROUTER_API_KEY=${OPENROUTER_API_KEY},\
+DEFAULT_MODEL=google/gemini-2.0-flash-001,\
+SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN},\
+SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET},\
+TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN},\
+TELEGRAM_WEBHOOK_URL=https://ruvbot-xxx.run.app/telegram/webhook,\
+DISCORD_TOKEN=${DISCORD_TOKEN},\
+DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}"
+```
+
+### Kubernetes Deployment
+
+```yaml
+# k8s/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruvbot
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ruvbot
+  template:
+    metadata:
+      labels:
+        app: ruvbot
+    spec:
+      containers:
+      - name: ruvbot
+        image: ruvector/ruvbot:latest
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - secretRef:
+            name: ruvbot-secrets
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ruvbot
+spec:
+  selector:
+    app: ruvbot
+  ports:
+  - port: 80
+    targetPort: 3000
+  type: LoadBalancer
+```
+
+## Webhook Configuration
+
+### Inbound Webhooks
+
+RuvBot exposes webhook endpoints for receiving messages from external services.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/webhook/message` | POST | Receive chat messages |
+| `/webhook/event` | POST | Receive system events |
+| `/slack/events` | POST | Slack Events API |
+| `/telegram/webhook` | POST | Telegram webhook updates |
+| `/api/sessions/:id/chat` | POST | Direct chat endpoint |
+
+### Webhook Security
+
+```bash
+# Set webhook authentication
+export WEBHOOK_SECRET="your-shared-secret"
+export WEBHOOK_AUTH_TOKEN="bearer-token-for-inbound"
+```
+
+Inbound requests are validated using:
+- **X-Webhook-Secret** header for HMAC signature verification
+- **Authorization** header with Bearer token
+- Request body signature validation
+
+### Outbound Webhooks
+
+Configure RuvBot to send responses and events to your services:
+
+```json
+{
+  "webhooks": {
+    "outbound": {
+      "url": "https://your-service.com/ruvbot-callback",
+      "secret": "shared-secret-for-signing",
+      "events": ["message", "agent.spawn", "session.create", "error"],
+      "retries": 3,
+      "timeout": 30000,
+      "headers": {
+        "X-Custom-Header": "value"
+      }
+    }
+  }
+}
+```
+
+### Webhook Event Types
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `message` | `{sessionId, role, content, timestamp}` | New message in session |
+| `message.response` | `{sessionId, content, model, tokens}` | Bot response generated |
+| `agent.spawn` | `{agentId, type, name}` | Agent created |
+| `agent.stop` | `{agentId, reason}` | Agent terminated |
+| `session.create` | `{sessionId, agentId, userId}` | Session started |
+| `session.end` | `{sessionId, messageCount, duration}` | Session ended |
+| `memory.store` | `{key, namespace, size}` | Memory stored |
+| `security.threat` | `{type, severity, blocked}` | Threat detected |
+| `error` | `{code, message, context}` | Error occurred |
+
+### Example: Custom Integration
+
+```typescript
+// Your webhook receiver
+app.post('/ruvbot-callback', (req, res) => {
+  // Verify signature
+  const signature = req.headers['x-webhook-signature'];
+  const isValid = verifyHmac(req.body, signature, WEBHOOK_SECRET);
+
+  if (!isValid) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  const { event, data } = req.body;
+
+  switch (event) {
+    case 'message.response':
+      // Forward to your chat system
+      sendToChat(data.sessionId, data.content);
+      break;
+    case 'security.threat':
+      // Alert security team
+      alertSecurity(data);
+      break;
+  }
+
+  res.status(200).send('OK');
+});
+```
+
+### CLI Webhook Commands
+
+```bash
+# List configured webhooks
+ruvbot webhooks list
+
+# Test a webhook endpoint
+ruvbot webhooks test https://your-service.com/callback
+
+# Test with custom payload
+ruvbot webhooks test https://your-service.com/callback \
+  --payload '{"test": true, "message": "Hello"}'
+
+# Show channel-specific setup
+ruvbot channels setup webhook
+```
 
 ## LLM Providers - Gemini 2.5 Default
 

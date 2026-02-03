@@ -179,28 +179,87 @@ RuvLLM contains a mature reinforcement-learning-from-model-feedback (RLM) traini
 
 ## Considered Options
 
-### Option A: Post-Training Quantization of GLM-4.7-Flash to 1-bit
+### Option A: Post-Training Quantization of GLM-4.7-Flash (PTQ Tiers)
 
-Take the existing BF16 GLM-4.7-Flash weights and quantize to IQ1_S format.
+Take the existing BF16 GLM-4.7-Flash weights and quantize to low-bit formats without full distillation training.
 
-**Approach:**
-1. Download GLM-4.7-Flash BF16 weights from HuggingFace
-2. Apply GPTQ/AWQ-style calibration with IQ1_S target
-3. Serve via existing GGUF pipeline
+**Critical distinction — IQ1_S ≠ BitNet b1.58:**
 
-**Pros:**
-- No training infrastructure needed
-- Immediate availability
-- Leverages existing GGUF IQ1_S support
+| Property | GGUF IQ1_S | BitNet b1.58 |
+|----------|-----------|--------------|
+| Encoding | Codebook-based importance quantization | Ternary {-1, 0, +1} via absmean |
+| Bits/weight | 1.56 bpw | 1.58 bpw |
+| Inference | **Dequantize → FP multiply** | **Integer addition only (no multiply)** |
+| Speed benefit | Memory bandwidth only | Bandwidth + compute (multiplication-free) |
+| How obtained | Post-training quantization | Trained from scratch or distilled |
+| Quality at 7B | Near-random / broken outputs | Matches FP16 |
+
+**Existing GLM-4.7-Flash GGUF quantizations available** (community-published):
+
+| Repository | Lowest Quant | Size | Notes |
+|-----------|-------------|------|-------|
+| [bartowski/zai-org_GLM-4.7-Flash-GGUF](https://huggingface.co/bartowski/zai-org_GLM-4.7-Flash-GGUF) | IQ2_XXS (2.06 bpw) | 7.62 GB | No IQ1_S published |
+| [unsloth/GLM-4.7-Flash-GGUF](https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF) | UD-Q2_K_XL (2.7 bpw dynamic) | ~11 GB | Dynamic quant, recommended |
+| [ngxson/GLM-4.7-Flash-GGUF](https://huggingface.co/ngxson/GLM-4.7-Flash-GGUF) | Q4_K_M (4.5 bpw) | 18.1 GB | 55 variants available |
+
+**No IQ1_S quantization** has been published for GLM-4.7-Flash by any community quantizer — this itself is a signal (too aggressive for practical use).
+
+**Sub-options ranked by increasing effort:**
+
+**Sub-option 0A: Download existing IQ2_XXS GGUF**
+- Download bartowski's IQ2_XXS at 7.62 GB
+- Cost: $0, time: 5 minutes (just download)
+- Quality: ~75-80% of FP16 (2.06 bpw is usable per community reports)
+- NOT 1-bit, NOT BitNet — just aggressive 2-bit compression
+- RuvLLM gap: IQ2_XXS dequantization not implemented (falls to error catch-all in `quantization.rs:358`)
+- RuvLLM Q2_K dequantization IS implemented and works
+
+**Sub-option 0B: Quantize to IQ1_S via llama.cpp**
+- Run `llama-quantize GLM-4.7-Flash-F16.gguf IQ1_S` with importance matrix
+- Cost: $0, time: ~30 minutes on CPU
+- Quality: **SEVERE degradation** — blind testing shows IQ1_S is "broken rather than just bad" on 7B; outputs contain garbled text despite acceptable perplexity scores. 30B MoE may survive better due to parameter redundancy, but expert routing is highly sensitive to weight perturbation
+- RuvLLM gap: IQ1_S dequantization not implemented (`quantization.rs:358` catch-all)
+- Does NOT achieve BitNet multiplication-free inference
+
+**Sub-option 0C: PT-BitNet ternary PTQ** (per [PT-BitNet paper](https://www.sciencedirect.com/science/article/abs/pii/S089360802500735X))
+- Apply absmean ternary quantization (BitNet's native method) to pre-trained weights with calibration data
+- Cost: ~$50-200 (small GPU calibration run, 1-4 hours on 1× A100)
+- Quality: ~55-65% downstream accuracy (PT-BitNet reports 61% on 70B; GLM-4.7-Flash's 30B-A3B may differ)
+- THIS IS proper BitNet ternary format → **enables multiplication-free inference with AD-4 kernels**
+- Requires implementing absmean ternary quantizer (~200-300 lines of new code)
+- Requires calibration dataset (WikiText-2 or similar, ~1M tokens)
+
+**Sub-option 0D: BitDistill Lite (10B tokens)** (per [BitDistill paper](https://arxiv.org/html/2510.13998v1))
+- 3-stage: SubLN insertion → 10B-token continued pre-training → KL + attention distillation
+- Cost: ~$200-500 (8× GPU hours on Mi300X/A100 class)
+- Quality: **~90-95% of FP16** (BitDistill reports 88.17% vs 88.01% FP16 on MNLI at 0.6B)
+- Near-full quality recovery with only 10B tokens (vs 200B+ for Phase 1 full distillation)
+- Requires SubLN module insertion + distillation fine-tuning loop
+- Bridges gap between pure PTQ and full expert distillation (Phase 1)
+
+**Summary comparison:**
+
+| Sub-option | Cost | Time | Quality (est.) | BitNet Speedup | RuvLLM Ready |
+|-----------|------|------|---------------|----------------|-------------|
+| 0A: IQ2_XXS download | $0 | 5 min | ~75-80% | No | No (missing dequant) |
+| 0B: IQ1_S quantize | $0 | 30 min | ~40-50% | No | No (missing dequant) |
+| 0C: PT-BitNet PTQ | ~$100 | 2-4 hrs | ~55-65% | **Yes** | Needs quantizer impl |
+| 0D: BitDistill Lite | ~$300 | 1-2 days | ~90-95% | **Yes** | Needs SubLN + KD loop |
+
+**Pros (of PTQ approach generally):**
+- Immediate or near-immediate results ($0-$300, minutes to days)
+- No large-scale training infrastructure
+- Validates inference pipeline and kernels before investing in full distillation
+- Sub-option 0C produces genuine BitNet ternary format for kernel development
 
 **Cons:**
-- **Severe quality degradation** — post-training 1-bit quantization loses 30-50% quality
-- BitNet research explicitly states native training is required for quality parity
-- MoE routing scores collapse under extreme quantization
-- Does not achieve BitNet's multiplication-free inference (still uses dequant-then-multiply)
-- No ternary lookup table optimization possible
+- Sub-options 0A/0B: Quality too degraded for production coding tasks
+- Sub-options 0A/0B: No BitNet multiplication-free inference (still dequant-then-multiply)
+- Sub-option 0C: Significant quality loss (~35-45%) vs teacher — adequate for kernel validation, not production
+- Sub-option 0D: Requires non-trivial training code (SubLN, KD loss) but much less than full Phase 1
+- IQ1_S blind test results: statistically indistinguishable from random on smaller models
 
-**Verdict: Rejected** — Quality loss makes this unsuitable for production coding tasks.
+**Verdict: Recommended as Phase 0 rapid prototype** — Sub-option 0C (PT-BitNet PTQ) is the optimal entry point: $100, 2-4 hours, produces genuine BitNet ternary format for kernel development and inference validation. Sub-option 0D (BitDistill Lite) bridges to Phase 1 if higher quality is needed before committing to full expert distillation. Sub-options 0A/0B are useful only as baselines for comparison.
 
 ### Option B: Native BitNet Training of GLM-4.7-Flash Architecture (Full)
 
@@ -303,22 +362,40 @@ Keep GLM-4.7-Flash structure but replace only the expert MLP layers with BitLine
 
 ## Decision
 
-**Phased approach: D → C → B**
+**Phased approach: A(0C) → D → C → B**
+
+### Phase 0: PTQ Rapid Prototype (Option A, Sub-option 0C)
+- **Timeline**: 1-2 weeks
+- **Cost**: ~$100 (calibration on 1× A100 spot, 2-4 hours)
+- **Goal**: Produce a genuine BitNet ternary GGUF of GLM-4.7-Flash for kernel development, inference pipeline validation, and baseline quality measurement
+- **Deliverables**:
+  - PT-BitNet ternary quantized GLM-4.7-Flash GGUF file (~6-7 GB)
+  - Absmean ternary quantizer implementation (~200-300 lines)
+  - IQ1_S / BITNET_T158 dequantization kernel in RuvLLM
+  - Baseline quality benchmarks (HumanEval, MMLU) to compare against Phase 1+
+  - Functional TL1 kernel validated against ternary model
+- **Expected quality**: ~55-65% of GLM-4.7-Flash (adequate for kernel validation, not production)
+- **Key value**: De-risks Phase 1 by validating the entire inference pipeline (GGUF loading → ternary dequant → TL1 kernel → MoE routing → token generation) at near-zero cost before committing to $1,300+ distillation training
+- **Optional upgrade (0D)**: If 0C quality is too low for meaningful testing, apply BitDistill Lite (10B tokens, ~$300, 1-2 days) to reach ~90-95% quality
 
 ### Phase 1: BitNet Expert Replacement (Option D)
 - **Timeline**: 3-4 months
-- **Goal**: Validate MoE + BitNet integration, build inference kernels
+- **Cost**: ~$1,300-$2,000 (4× A100 spot, ~46 days)
+- **Goal**: Full-quality ternary experts via distillation, validated against Phase 0 baseline
 - **Deliverables**: Working Craftsman Ultra 30b 1bit (mixed: ternary experts, FP16 attention)
 - **Expected quality**: ~90-95% of GLM-4.7-Flash on coding benchmarks
+- **Prerequisites**: Phase 0 validates inference pipeline works end-to-end
 
 ### Phase 2: Full BitNet Distillation (Option C)
 - **Timeline**: 4-6 months after Phase 1
+- **Cost**: ~$2,500-$5,000 (4× H100, 16-32 days)
 - **Goal**: Full ternary model with complete BitNet inference optimization
 - **Deliverables**: Craftsman Ultra 30b 1bit v2 (full ternary except router/embed/head)
 - **Expected quality**: ~95-98% of GLM-4.7-Flash
 
 ### Phase 3: Native BitNet Training (Option B)
 - **Timeline**: 6-12 months after Phase 2, contingent on funding/compute
+- **Cost**: ~$15,000-$30,000 (8× H100 cluster, 90-180 days)
 - **Goal**: Surpass GLM-4.7-Flash quality with native ternary training
 - **Deliverables**: Craftsman Ultra 30b 1bit v3 (trained from scratch)
 - **Expected quality**: 100%+ of GLM-4.7-Flash (BitNet at scale exceeds FP16)
@@ -797,6 +874,91 @@ This is a single-line addition to `RealTrainingConfig` (`use_cuda: bool`, `cuda_
 4. **Mixed precision training**: FP16 shadow weights + BF16 activations reduces memory, enabling smaller instances
 5. **Gradient checkpointing**: Trade compute for memory to fit on fewer GPUs
 
+### AD-18: Phase 0 — PT-BitNet Post-Training Quantization Strategy
+
+**Decision**: Implement a PT-BitNet ternary post-training quantizer as Phase 0, producing a rapid prototype GGUF for inference pipeline validation before investing in full distillation.
+
+**Rationale**: The original Option A ("Rejected") assumed only generic IQ1_S quantization, which produces garbled outputs at 1.56 bpw. However, PT-BitNet (2025) demonstrates that applying BitNet's native absmean ternary quantization to pre-trained weights with calibration data achieves significantly better results (61% downstream at 70B) than generic codebook PTQ. This produces genuine BitNet ternary format that enables multiplication-free inference with TL1/TL2 kernels — unlike IQ1_S which still requires dequant-then-multiply.
+
+**Implementation approach**:
+
+```
+Phase 0 Pipeline:
+  1. Load GLM-4.7-Flash FP16/BF16 weights
+  2. For each linear layer in expert FFNs:
+     a. Compute gamma = mean(|W|)  (absmean scale)
+     b. W_ternary = RoundClip(W / (gamma + epsilon), -1, 1)
+     c. Store: 2-bit packed ternary weights + FP16 scale per block
+  3. Calibration pass (optional, improves quality):
+     a. Run ~1000 calibration samples through teacher model
+     b. Record activation statistics per layer
+     c. Optimize scale factors to minimize MSE between teacher and ternary outputs
+  4. Export to GGUF with BITNET_T158 tensor type + metadata
+  5. Validate: load in BitNetBackend → TL1 kernel → generate tokens
+```
+
+**Absmean ternary quantizer (core algorithm)**:
+```
+Input:  W ∈ R^{m×n} (FP16 weight matrix)
+Output: W_t ∈ {-1,0,+1}^{m×n}, scale ∈ R (per-block FP16)
+
+For each block of 256 elements:
+  1. gamma = mean(|block|) + 1e-8
+  2. normalized = block / gamma
+  3. ternary = round(clamp(normalized, -1, 1))  → {-1, 0, +1}
+  4. Pack: 2 bits per weight (00=-1, 01=0, 10=+1)
+  5. Store scale = gamma as FP16
+```
+
+**What stays FP16** (same as AD-2):
+- MoE router gating weights
+- Token embeddings + LM head
+- RoPE frequencies
+- LayerNorm/RMSNorm parameters
+
+**RuvLLM implementation gaps to fill**:
+
+| Gap | Effort | Details |
+|-----|--------|---------|
+| Absmean ternary quantizer | ~200-300 lines | New function in `gguf/quantization.rs` or new module |
+| IQ1_S / BITNET_T158 dequantization | ~80-120 lines | Add to `dequantize_tensor` match arm (currently falls to error at line 358) |
+| GGUF export with ternary metadata | ~100-150 lines | Extend `GgufExportResult` with BitNet metadata keys from AD-5 |
+| TL1 kernel smoke test | ~200 lines | Validate ternary GEMM produces correct output on PTQ model |
+
+**Total new code**: ~600-800 lines (vs ~15,000+ for Phase 1 full distillation pipeline)
+
+**Quality expectations (conservative estimates for GLM-4.7-Flash 30B-A3B)**:
+
+| Benchmark | FP16 Baseline | Phase 0 PTQ (est.) | Phase 1 Distill (est.) |
+|-----------|--------------|-------------------|----------------------|
+| HumanEval pass@1 | ~65% | ~35-45% | ~55-60% |
+| MMLU | ~75% | ~45-55% | ~65-70% |
+| SWE-bench Verified | 59.2% | ~25-35% | ~50-55% |
+| LiveCodeBench v6 | 64.0% | ~30-40% | ~55-60% |
+
+**Why Phase 0 quality is still useful**:
+1. **Kernel validation**: Ternary GEMM correctness doesn't depend on model quality
+2. **Memory profiling**: Real-world memory usage measurement with actual MoE activation patterns
+3. **Throughput benchmarking**: Measure real tok/s with TL1/TL2/I2_S kernels on target hardware
+4. **Pipeline testing**: End-to-end GGUF load → inference → token output
+5. **Baseline measurement**: Quantitative quality floor establishes improvement target for Phase 1
+6. **Cost**: ~$100 vs ~$1,300 for Phase 1 — validates infrastructure before 10x investment
+
+**Key configuration**:
+```rust
+pub struct PtBitnetConfig {
+    pub calibration_samples: usize,     // 1000 default (WikiText-2 or code corpus)
+    pub block_size: usize,              // 256 (matches AD-1)
+    pub optimize_scales: bool,          // true: MSE-optimized scales; false: raw absmean
+    pub layers_to_quantize: LayerMask,  // ExpertsOnly (Phase 0) or All (future)
+    pub export_format: TernaryFormat,   // BitnetT158 (native) or IQ1S (llama.cpp compat)
+    pub router_precision: Precision,    // FP16 (always, per AD-2)
+}
+```
+
+**Reused**: GGUF parser, tensor metadata, `GgufQuantType` enum, export pipeline.
+**New**: `PtBitnetQuantizer`, `absmean_ternary()`, `BITNET_T158` dequantization kernel.
+
 ---
 
 ## Consequences
@@ -809,12 +971,14 @@ This is a single-line addition to `RealTrainingConfig` (`use_cuda: bool`, `cuda_
 4. **Multiplication-free expert GEMM**: Integer addition only in expert forward passes
 5. **SONA compatibility**: MicroLoRA adaptation preserves per-session learning
 6. **GGUF ecosystem**: Compatible with existing model distribution infrastructure
-7. **Incremental path**: Phase 1 delivers value quickly; Phases 2-3 improve quality
+7. **Incremental path**: Phase 0 validates at ~$100; Phase 1 delivers quality; Phases 2-3 optimize
 8. **~70% RLM code reuse**: GRPO, EWC++, ContrastiveTrainer, MemoryDistiller, PolicyStore are production-tested — only BitLinear layer and orchestrator are net-new
 9. **Adaptive distillation**: GRPO reward scaling dynamically focuses compute on hard-to-distill experts
 10. **Cross-expert stability**: EWC++ Fisher diagonal prevents catastrophic forgetting during sequential expert distillation
 11. **Learned quantization policies**: PolicyStore persists per-layer ternary scale distributions for reproducible future distillation runs
 12. **Expert-parallel distillation**: Independent expert FFNs enable rayon-parallel distillation across CPU cores
+13. **Phase 0 de-risks Phase 1**: ~$100 PTQ prototype validates entire inference pipeline (GGUF → dequant → kernel → MoE → generation) before committing $1,300+ to distillation
+14. **Existing GGUF ecosystem**: Community-published GLM-4.7-Flash GGUFs (bartowski, unsloth) available as comparison baselines
 
 ### Negative
 
@@ -830,18 +994,31 @@ This is a single-line addition to `RealTrainingConfig` (`use_cuda: bool`, `cuda_
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| MoE routing degrades with ternary experts | Medium | High | Phase 1 validates routing; router stays FP16; AD-12 contrastive validation |
-| bitnet.cpp kernel translation to Rust introduces bugs | Medium | Medium | Extensive kernel unit tests; validate against reference impl |
+| Phase 0 PTQ quality too low for meaningful testing | Medium | Low | Phase 0 is for kernel/pipeline validation, not quality; upgrade to 0D (BitDistill Lite) if needed |
+| MoE routing degrades with ternary experts | Medium | High | Phase 0 detects routing issues early; Phase 1 validates routing; router stays FP16; AD-12 contrastive validation |
+| bitnet.cpp kernel translation to Rust introduces bugs | Medium | Medium | Phase 0 PTQ model provides cheap test fixture; extensive kernel unit tests; validate against reference impl |
 | Distillation fails to converge for MoE | Low | High | GRPO reward scaling + per-expert distillation fallback; EWC++ stability (AD-13) |
 | GLM-4.7-Flash architecture changes break compatibility | Low | Medium | Pin to specific HF revision; architecture abstraction layer |
-| IQ1_S GGUF format insufficient for absmean metadata | Medium | Low | Register custom GGUF type; backward-compatible extension |
+| IQ1_S GGUF format insufficient for absmean metadata | Medium | Low | Register custom GGUF type (BITNET_T158); backward-compatible extension |
 | EWC++ Fisher accumulation OOM at 30B scale | Medium | Medium | Sparse Fisher (top-k diagonal entries); per-expert rather than global Fisher |
 | GRPO reward signal too noisy for distillation | Low | Low | Fall back to static KD loss; GRPO reward as optional multiplier |
 | `RealContrastiveTrainer` doesn't scale to 30B | Medium | Medium | Extract training loop; replace Candle Linear with BitLinear; keep optimizer/scheduler |
+| Calibration data bias in Phase 0 PTQ | Low | Low | Use diverse calibration corpus (WikiText + code); measure variance across calibration sets |
 
 ---
 
 ## Validation Criteria
+
+### Phase 0 Exit Criteria
+- [ ] Absmean ternary quantizer produces valid {-1, 0, +1} weights from GLM-4.7-Flash FP16
+- [ ] GGUF export with BITNET_T158 tensor type loads without error in BitNetBackend
+- [ ] TL1 kernel produces non-zero, bounded output on PTQ ternary weights
+- [ ] MoE routing selects experts (not all-zero or all-same-expert degenerate routing)
+- [ ] End-to-end token generation produces coherent (if degraded) text
+- [ ] Memory usage measured and documented for real MoE activation patterns
+- [ ] Throughput measured: tok/s on target CPU (AVX2 and/or NEON)
+- [ ] Baseline quality benchmarks recorded (HumanEval, MMLU) as Phase 1 improvement target
+- [ ] Total Phase 0 cost < $200
 
 ### Phase 1 Exit Criteria
 - [ ] BitNet backend loads GGUF with ternary expert weights
@@ -887,3 +1064,9 @@ This is a single-line addition to `RealTrainingConfig` (`use_cuda: bool`, `cuda_
 13. RuvLLM Memory Distillation: `crates/ruvllm/src/reasoning_bank/distillation.rs`
 14. RuvLLM Policy Store: `crates/ruvllm/src/policy_store.rs`
 15. RuvLLM Contrastive Training: `crates/ruvllm/src/training/contrastive.rs`
+16. PT-BitNet: "Scaling up the 1-Bit large language model with post-training quantization" (2025) — https://www.sciencedirect.com/science/article/abs/pii/S089360802500735X
+17. BitDistill: "BitNet Distillation" (arXiv:2510.13998, Oct 2025) — https://arxiv.org/html/2510.13998v1
+18. bartowski, GLM-4.7-Flash-GGUF quantizations — https://huggingface.co/bartowski/zai-org_GLM-4.7-Flash-GGUF
+19. unsloth, GLM-4.7-Flash-GGUF dynamic quantizations — https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF
+20. llama.cpp IQ1_S blind testing (Discussion #5962) — https://github.com/ggml-org/llama.cpp/discussions/5962
+21. STBLLM: "Breaking the 1-bit Barrier" (ICLR 2025) — https://proceedings.iclr.cc/paper_files/paper/2025/file/ff997469ac66cf893c4183efeb22212a-Paper-Conference.pdf

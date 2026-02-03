@@ -1,6 +1,6 @@
 # Domain-Driven Design: Craftsman Ultra 30b 1bit
 
-**Version:** 2.0
+**Version:** 2.1
 **Date:** 2026-02-03
 **Relates to:** ADR-017-craftsman-ultra-30b-1bit-bitnet-integration
 **Status:** Research / Pre-Implementation
@@ -75,6 +75,11 @@ The following terms have precise meaning within the Craftsman Ultra domain. All 
 | **Contrastive Router Validation** | Post-ternary-conversion check that MoE routing still selects correct experts, using triplet loss on expert embeddings. |
 | **Knowledge Distillation Loss** | `alpha * KL(teacher/T, student/T) + (1-alpha) * CE(labels, student)`. Core training objective for ternary student. |
 | **Distillation Trajectory** | Sequence of training steps for one expert, recorded as ReasoningBank `Trajectory` for quality analysis. |
+| **PT-BitNet** | Post-Training BitNet quantization: applying absmean ternary conversion to pre-trained FP16 weights with optional calibration. No training loop — just quantize and export. |
+| **Calibration Pass** | Forward pass of ~1000 samples through the teacher model to record activation statistics used to optimize ternary scale factors. |
+| **IQ1_S** | llama.cpp's 1.56 bpw importance quantization format. Codebook-based, dequant-then-multiply — NOT multiplication-free like BitNet. |
+| **BITNET_T158** | Proposed GGUF tensor type for native BitNet b1.58 ternary weights (2-bit packed + FP16 per-block absmean scale). Distinct from IQ1_S. |
+| **Phase 0 Prototype** | PT-BitNet quantized model used for inference pipeline validation and kernel testing, not production quality. |
 
 ---
 
@@ -241,16 +246,22 @@ The following terms have precise meaning within the Craftsman Ultra domain. All 
 
 ### 3.4 Quantization Pipeline Context (Supporting)
 
-**Responsibility**: Convert full-precision weights to ternary format during training/distillation. **Delegates training orchestration to the RLM Training Orchestration Context** (3.8), which provides GRPO rewards, EWC++ stability, and quality tracking.
+**Responsibility**: Convert full-precision weights to ternary format. Supports two modes:
+1. **Phase 0 (PTQ)**: Direct absmean ternary quantization with optional calibration — no training loop
+2. **Phase 1+ (Distillation)**: Full training pipeline with STE, shadow weights, and RLM orchestration
+
+**Delegates training orchestration to the RLM Training Orchestration Context** (3.8) for Phase 1+ distillation, which provides GRPO rewards, EWC++ stability, and quality tracking.
 
 **Owns:**
-- Absmean quantization implementation
-- Straight-through estimator for backpropagation
-- Shadow weight management (FP16 ↔ ternary)
-- GGUF export with ternary tensor metadata
+- Absmean quantization implementation (shared by Phase 0 and Phase 1+)
+- PT-BitNet quantizer for Phase 0 rapid prototype (no training loop)
+- Straight-through estimator for backpropagation (Phase 1+ only)
+- Shadow weight management (FP16 ↔ ternary, Phase 1+ only)
+- Calibration pass for scale factor optimization (Phase 0)
+- GGUF export with ternary tensor metadata (BITNET_T158 type)
 - Calibration dataset management
 
-**Delegates to RLM Training (3.8):**
+**Delegates to RLM Training (3.8) — Phase 1+ only:**
 - Distillation loss computation with GRPO reward scaling
 - Cross-expert stability via EWC++ regularization
 - Router validation via contrastive training
@@ -258,43 +269,53 @@ The following terms have precise meaning within the Craftsman Ultra domain. All 
 - Per-layer policy persistence via PolicyStore
 
 **Key Entities:**
-- `BitLinearTrainer` — BitLinear layer with shadow weights and STE (NEW)
-- `AbsmeanQuantizer` — Converts FP16 block → ternary + scale (NEW)
+- `PtBitnetQuantizer` — Phase 0: direct FP16 → ternary conversion with calibration (NEW, ~200-300 lines)
+- `AbsmeanQuantizer` — Converts FP16 block → ternary + scale (NEW, shared by Phase 0 and 1+)
+- `CalibrationRunner` — Phase 0: runs calibration samples to optimize scale factors (NEW, ~100 lines)
+- `BitLinearTrainer` — Phase 1+: BitLinear layer with shadow weights and STE (NEW)
 - `TeacherModel` — FP16 GLM-4.7-Flash reference model (NEW)
 - `CalibrationDataset` — Token sequences for quantization calibration (NEW)
-- `GrpoOptimizer` — Per-expert reward scaling (REUSED from `training/grpo.rs`)
-- `EwcRegularizer` — Cross-expert forgetting prevention (REUSED from `lora/training.rs`)
+- `GrpoOptimizer` — Per-expert reward scaling, Phase 1+ only (REUSED from `training/grpo.rs`)
+- `EwcRegularizer` — Cross-expert forgetting prevention, Phase 1+ only (REUSED from `lora/training.rs`)
 
 **Invariants:**
-- Shadow weights are FP16 throughout training (never accumulated in ternary)
 - Quantization is deterministic: same FP16 input → same ternary output
-- Teacher model is frozen during distillation (no gradient updates)
-- Distillation loss = KD_base * GRPO_scale + EWC_penalty (see ADR-017 AD-11, AD-13)
+- Phase 0: No shadow weights — direct one-shot quantization
+- Phase 1+: Shadow weights are FP16 throughout training (never accumulated in ternary)
+- Phase 1+: Teacher model is frozen during distillation (no gradient updates)
+- Phase 1+: Distillation loss = KD_base * GRPO_scale + EWC_penalty (see ADR-017 AD-11, AD-13)
 
 **Interfaces:**
-- **Inbound**: Teacher model weights + training dataset
-- **Outbound**: Trained ternary weights exported as GGUF
+- **Inbound**: Teacher model weights (FP16/BF16) + calibration or training dataset
+- **Outbound**: Ternary weights exported as GGUF with BITNET_T158 tensor type
 - **Downstream**: Feeds Model Lifecycle Context with final artifacts
 
 ```
-┌─────────────────────────────────────────────┐
-│      Quantization Pipeline Context          │
-│                                             │
-│  ┌──────────────┐    ┌──────────────────┐   │
-│  │TeacherModel  │───▶│DistillPipeline   │   │
-│  │(GLM-4.7-Flash│    │(KD loss + STE)   │   │
-│  └──────────────┘    └────────┬─────────┘   │
-│                               │              │
-│  ┌──────────────┐    ┌───────▼──────────┐   │
-│  │AbsmeanQuant  │◀───│BitLinearTrainer  │   │
-│  │(FP16→ternary)│    │(shadow weights)  │   │
-│  └──────┬───────┘    └──────────────────┘   │
-│         │                                    │
-│  ┌──────▼───────────────────────────────┐   │
-│  │         GGUFExporter                 │   │
-│  │  (ternary tensors + metadata)        │   │
-│  └──────────────────────────────────────┘   │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│           Quantization Pipeline Context                  │
+│                                                          │
+│  Phase 0 (PTQ):                                          │
+│  ┌──────────────┐    ┌──────────────────┐                │
+│  │ FP16 Weights │───▶│PtBitnetQuantizer │                │
+│  │(GLM-4.7-Flash│    │(absmean + calib) │                │
+│  └──────────────┘    └────────┬─────────┘                │
+│                               │                          │
+│  Phase 1+ (Distillation):    │                          │
+│  ┌──────────────┐    ┌───────┼──────────┐                │
+│  │TeacherModel  │───▶│DistillPipeline   │                │
+│  │(GLM-4.7-Flash│    │(KD loss + STE)   │                │
+│  └──────────────┘    └────────┬─────────┘                │
+│                               │                          │
+│  ┌──────────────┐    ┌───────▼──────────┐                │
+│  │AbsmeanQuant  │◀───│BitLinearTrainer  │                │
+│  │(FP16→ternary)│    │(shadow weights)  │                │
+│  └──────┬───────┘    └──────────────────┘                │
+│         │                                                │
+│  ┌──────▼───────────────────────────────┐   Both paths:  │
+│  │         GGUFExporter                 │◀──────────┘    │
+│  │  (BITNET_T158 tensors + metadata)    │                │
+│  └──────────────────────────────────────┘                │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -991,18 +1012,19 @@ Add CUDA device dispatch to `RealContrastiveTrainer` (`training/real_trainer.rs:
 
 ### Compatibility Matrix
 
-| Existing Feature | Impact | Action |
-|-----------------|--------|--------|
-| GGUF parser | Low | Add BITNET_T158 type to `GgufQuantType` enum |
-| `InferenceBackend` trait | None | New `BitNetBackend` implements existing trait |
-| KV cache (`kv_cache.rs`) | None | Reused as-is (FP16/Q8 cache unchanged) |
-| Autodetect (`autodetect.rs`) | Low | Add ternary kernel capability flags |
-| SIMD kernels (`kernels/`) | Medium | New ternary kernels alongside existing |
-| MicroLoRA (`lora/`) | Low | Adapter applied to BitLinear output |
-| SONA (`sona/`) | None | Instant loop drives adapter feedback |
-| Claude Flow (`claude_flow/`) | Low | Add `BitNetModel` to model router |
-| NAPI bindings | Low | Expose `BitNetBackend` via existing pattern |
-| tokenizer | None | Reused (GLM-4 tokenizer, 151K vocab) |
+| Existing Feature | Impact | Phase 0 | Phase 1+ |
+|-----------------|--------|---------|----------|
+| GGUF parser | Low | Add BITNET_T158 type to `GgufQuantType` enum | Same |
+| `dequantize_tensor` | **Medium** | **Implement IQ1_S/BITNET_T158 dequant** (currently returns error at line 358) | Same |
+| `InferenceBackend` trait | None | New `BitNetBackend` implements existing trait | Same |
+| KV cache (`kv_cache.rs`) | None | Reused as-is | Reused as-is |
+| Autodetect (`autodetect.rs`) | Low | Add ternary kernel capability flags | Same |
+| SIMD kernels (`kernels/`) | **Medium** | TL1 kernel minimum viable for validation | Full TL1/TL2/I2_S suite |
+| MicroLoRA (`lora/`) | None (Phase 0) | Not needed for PTQ | Adapter applied to BitLinear output |
+| SONA (`sona/`) | None | Not needed for PTQ | Instant loop drives adapter feedback |
+| Claude Flow (`claude_flow/`) | Low | Add `BitNetModel` to model router | Same |
+| NAPI bindings | Low | Expose `BitNetBackend` via existing pattern | Same |
+| tokenizer | None | Reused (GLM-4 tokenizer, 151K vocab) | Same |
 
 ### Non-Breaking Changes
 
@@ -1025,6 +1047,9 @@ All changes are additive. No existing backend, model, or API is modified. The `B
 | 9 | EWC++ Fisher OOM at 30B scale? | RLM Training | Open | May need sparse Fisher (top-k diagonal entries per expert) |
 | 10 | GRPO group_size = num_experts or per-layer? | RLM Training | Open | Per-layer groups provide finer reward signal but more compute |
 | 11 | Expert-parallel distillation rayon thread count? | RLM Training | Open | Balance CPU cores between rayon parallelism and ternary GEMM |
+| 12 | Phase 0 PTQ calibration corpus choice? | Phase 0 quality | Open | WikiText-2 vs code-specific corpus (e.g., The Stack) — code corpus may preserve coding ability better |
+| 13 | IQ1_S vs BITNET_T158 GGUF type for Phase 0? | GGUF compatibility | Open | IQ1_S (type 19) exists but block format may differ from absmean; custom BITNET_T158 avoids confusion but breaks llama.cpp compat |
+| 14 | Phase 0 → Phase 1 weight migration path? | Efficiency | Open | Can Phase 0 PTQ weights serve as initialization for Phase 1 distillation shadow weights? |
 
 ---
 
@@ -1043,3 +1068,7 @@ All changes are additive. No existing backend, model, or API is modified. The `B
 - RuvLLM Memory Distillation: `crates/ruvllm/src/reasoning_bank/distillation.rs`
 - RuvLLM Policy Store: `crates/ruvllm/src/policy_store.rs`
 - RuvLLM Contrastive Training: `crates/ruvllm/src/training/contrastive.rs`
+- PT-BitNet: "Scaling up the 1-Bit large language model with post-training quantization" (2025)
+- BitDistill: "BitNet Distillation" (arXiv:2510.13998, Oct 2025)
+- bartowski, GLM-4.7-Flash-GGUF quantizations: https://huggingface.co/bartowski/zai-org_GLM-4.7-Flash-GGUF
+- llama.cpp IQ1_S blind testing: https://github.com/ggml-org/llama.cpp/discussions/5962

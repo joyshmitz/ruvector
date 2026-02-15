@@ -15,8 +15,7 @@
 //! ```
 //! use rvf_runtime::qr_encode::{QrEncoder, EcLevel};
 //!
-//! let encoder = QrEncoder::new();
-//! let code = encoder.encode(b"Hello, RVF!", EcLevel::M).unwrap();
+//! let code = QrEncoder::encode(b"Hello, RVF!", EcLevel::M).unwrap();
 //! let svg = QrEncoder::to_svg(&code);
 //! let ascii = QrEncoder::to_ascii(&code);
 //! ```
@@ -85,6 +84,7 @@ pub struct QrEncoder;
 /// Data capacity = total_codewords - ec_codewords_per_block * num_blocks
 /// Source: ISO 18004 Tables 7 and 9.
 struct VersionInfo {
+    #[allow(dead_code)]
     version: u8,
     total_codewords: usize,
     /// EC codewords per block for [L, M, Q, H].
@@ -434,6 +434,7 @@ impl QrMatrix {
         self.modules[row][col] == ModuleState::Empty
     }
 
+    #[allow(dead_code)]
     fn is_dark(&self, row: usize, col: usize) -> bool {
         match self.modules[row][col] {
             ModuleState::Function(d) | ModuleState::Data(d) => d,

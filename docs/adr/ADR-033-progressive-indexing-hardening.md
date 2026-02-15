@@ -187,30 +187,101 @@ When distance variance is below threshold AND Layer B is not yet loaded, fall ba
 
 This prevents silent wrong answers. The caller knows the result quality.
 
-#### 2.4 Quality Flag in Search Results
+#### 2.4 Quality Flag at the API Boundary
 
-Add a quality indicator to `SearchResult`:
+`ResultQuality` is defined at two levels: per-retrieval and per-response.
+
+**Per-retrieval** (internal, attached to each candidate):
 
 ```rust
-/// Quality confidence for a search result.
+/// Quality confidence for the retrieval candidate set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ResultQuality {
-    /// Full index available, high confidence.
+pub enum RetrievalQuality {
+    /// Full index traversed, high confidence in candidate set.
     Full = 0x00,
     /// Partial index (Layer A+B), good confidence.
     Partial = 0x01,
     /// Layer A only, moderate confidence.
     LayerAOnly = 0x02,
     /// Degenerate distribution detected, low confidence.
-    /// Caller should retry after Layer B/C loads.
     DegenerateDetected = 0x03,
-    /// Brute-force fallback used, exact but slow.
-    BruteForce = 0x04,
+    /// Brute-force fallback used within budget, exact over scanned region.
+    BruteForceBudgeted = 0x04,
 }
 ```
 
-The caller can then decide: wait for better index, accept approximate, or force brute-force.
+**Per-response** (external, returned to the caller at the API boundary):
+
+```rust
+/// Response-level quality signal. This is the field that consumers
+/// (RAG pipelines, agent tool chains, MCP clients) MUST inspect.
+///
+/// If `response_quality < threshold`, the consumer should either:
+/// - Wait and retry (progressive loading will improve quality)
+/// - Widen the search (increase k or ef_search)
+/// - Fall back to an alternative data source
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ResponseQuality {
+    /// All results from full index. Trust fully.
+    Verified = 0x00,
+    /// Results from partial index. Usable but may miss neighbors.
+    Usable = 0x01,
+    /// Degraded retrieval detected. Results are best-effort.
+    /// The `degradation_reason` field explains why.
+    Degraded = 0x02,
+    /// Insufficient candidates found. Results are unreliable.
+    /// Caller SHOULD NOT use these for downstream decisions.
+    Unreliable = 0x03,
+}
+```
+
+**Derivation rule** — `ResponseQuality` is the minimum of all `RetrievalQuality` values in the result set:
+
+```rust
+fn derive_response_quality(results: &[SearchResult]) -> ResponseQuality {
+    let worst = results.iter()
+        .map(|r| r.retrieval_quality)
+        .max_by_key(|q| *q as u8)
+        .unwrap_or(RetrievalQuality::Full);
+
+    match worst {
+        RetrievalQuality::Full => ResponseQuality::Verified,
+        RetrievalQuality::Partial => ResponseQuality::Usable,
+        RetrievalQuality::LayerAOnly => ResponseQuality::Usable,
+        RetrievalQuality::DegenerateDetected => ResponseQuality::Degraded,
+        RetrievalQuality::BruteForceBudgeted => ResponseQuality::Degraded,
+    }
+}
+```
+
+**Wire format** — `ResponseQuality` is included in the query response header so it survives serialization across JSON, gRPC, and MCP boundaries:
+
+```rust
+pub struct QueryResponse {
+    pub results: Vec<SearchResult>,
+    pub response_quality: ResponseQuality,
+    pub degradation_reason: Option<DegradationReason>,
+    pub time_budget_exhausted: bool,
+    pub candidates_scanned: u64,
+    pub candidates_budget: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum DegradationReason {
+    /// Centroid epoch drift exceeded threshold.
+    CentroidDrift { epoch_drift: u32, max_drift: u32 },
+    /// Degenerate distance distribution detected (CV below threshold).
+    DegenerateDistribution { cv: f32, threshold: f32 },
+    /// Brute-force budget exhausted before scanning all candidates.
+    BudgetExhausted { scanned: u64, total: u64 },
+    /// Index layer not yet loaded.
+    IndexNotLoaded { available: &'static str, needed: &'static str },
+}
+```
+
+The caller can then decide: wait for better index, accept approximate, or force brute-force. A RAG pipeline that ignores `ResponseQuality::Unreliable` gets garbage. That's the caller's fault, not ours.
 
 #### 2.5 Distribution Assumption Declaration
 
@@ -250,9 +321,39 @@ Replace the single recall table with benchmark-class-specific targets:
 
 "Natural Embeddings" = sentence-transformers, OpenAI, Cohere on standard corpora.
 
-#### 3.3 Brute-Force Safety Net
+#### 3.3 Brute-Force Safety Net (Dual-Budgeted)
 
-When the candidate set from HNSW search is smaller than `2 * k`:
+When the candidate set from HNSW search is smaller than `2 * k`, the safety net
+activates. It is capped by **both** a time budget and a candidate budget to prevent
+unbounded work. An adversarial query cannot force O(N) compute.
+
+**Budget defaults:**
+
+```rust
+/// Maximum wall-clock time for the brute-force fallback scan.
+/// After this, the scan stops and returns whatever it has.
+const BRUTE_FORCE_TIME_BUDGET_US: u64 = 5_000; // 5 ms
+
+/// Maximum number of vectors to scan during brute-force fallback.
+/// For a 10M vector file with a 5% hot cache (500K vectors),
+/// this caps the scan at 10% of the hot cache.
+const BRUTE_FORCE_CANDIDATE_BUDGET: u64 = 50_000;
+```
+
+Both budgets are configurable via `QueryOptions`:
+
+```rust
+pub struct QueryOptions {
+    pub k: usize,
+    pub ef_search: u32,
+    /// Maximum microseconds for brute-force fallback. 0 = disable fallback.
+    pub brute_force_time_budget_us: u64,
+    /// Maximum vectors to scan during fallback. 0 = disable fallback.
+    pub brute_force_candidate_budget: u64,
+}
+```
+
+**Implementation:**
 
 ```rust
 fn query_with_safety_net(
@@ -260,35 +361,170 @@ fn query_with_safety_net(
     k: usize,
     hnsw_candidates: &[Candidate],
     store: &RvfStore,
-) -> (Vec<SearchResult>, ResultQuality) {
+    opts: &QueryOptions,
+) -> QueryResponse {
     if hnsw_candidates.len() >= 2 * k {
-        // Sufficient candidates, trust HNSW
-        (top_k(hnsw_candidates, k), ResultQuality::Full)
-    } else {
-        // Insufficient candidates — HNSW may have missed neighbors
-        // Fall back to brute-force on the hot cache
-        let hot_candidates = brute_force_hot_cache(query, store);
-        let merged = merge_candidates(hnsw_candidates, &hot_candidates);
-        let quality = if merged.len() >= 2 * k {
-            ResultQuality::Partial
-        } else {
-            ResultQuality::DegenerateDetected
+        return QueryResponse {
+            results: top_k(hnsw_candidates, k),
+            response_quality: ResponseQuality::Verified,
+            degradation_reason: None,
+            time_budget_exhausted: false,
+            candidates_scanned: hnsw_candidates.len() as u64,
+            candidates_budget: 0,
         };
-        (top_k(&merged, k), quality)
+    }
+
+    // Insufficient candidates — activate budgeted brute-force
+    let deadline = Instant::now() + Duration::from_micros(opts.brute_force_time_budget_us);
+    let max_scan = opts.brute_force_candidate_budget;
+    let mut scanned: u64 = 0;
+    let mut hot_candidates = Vec::new();
+    let mut budget_exhausted = false;
+
+    for block in store.hot_cache_blocks() {
+        if scanned >= max_scan {
+            budget_exhausted = true;
+            break;
+        }
+        if Instant::now() >= deadline {
+            budget_exhausted = true;
+            break;
+        }
+
+        let block_results = scan_block(query, block);
+        scanned += block.len() as u64;
+        hot_candidates.extend(block_results);
+    }
+
+    let merged = merge_candidates(hnsw_candidates, &hot_candidates);
+
+    let (quality, reason) = if merged.len() >= 2 * k {
+        (ResponseQuality::Usable, None)
+    } else if budget_exhausted {
+        (ResponseQuality::Degraded, Some(DegradationReason::BudgetExhausted {
+            scanned,
+            total: store.hot_cache_vector_count(),
+        }))
+    } else {
+        (ResponseQuality::Unreliable, Some(DegradationReason::DegenerateDistribution {
+            cv: 0.0, // will be filled by caller
+            threshold: DEGENERATE_CV_THRESHOLD,
+        }))
+    };
+
+    QueryResponse {
+        results: top_k(&merged, k),
+        response_quality: quality,
+        degradation_reason: reason,
+        time_budget_exhausted: budget_exhausted,
+        candidates_scanned: scanned,
+        candidates_budget: max_scan,
     }
 }
 ```
 
-This gives a **correctness safety net** at the cost of latency. Silent wrong answers become impossible — the system either returns high-quality results or signals that it cannot.
+**Why dual budget:**
+
+- **Time budget alone** is insufficient: on a fast machine, 5 ms scans millions of vectors.
+  An adversarial file with a massive hot cache becomes a CPU DoS.
+- **Candidate budget alone** is insufficient: on a slow machine, 50K scans may take 50 ms,
+  violating latency SLAs.
+- **Both together** bound work in both dimensions. The scan stops at whichever limit hits first.
+
+**Invariant**: The brute-force safety net is bounded. It will never scan more than
+`min(brute_force_candidate_budget, vectors_reachable_in_time_budget)` vectors. If both
+budgets are set to 0, the safety net is disabled entirely and the system returns
+`ResponseQuality::Unreliable` immediately when HNSW produces insufficient candidates.
 
 #### 3.4 Acceptance Test Update
 
 Update `benchmarks/acceptance-tests.md` to:
 
 1. Test against three distribution classes (natural, synthetic, adversarial)
-2. Verify `ResultQuality` flag accuracy
+2. Verify `ResponseQuality` flag accuracy at the API boundary
 3. Verify monotonic recall improvement across progressive load phases
 4. Measure brute-force fallback frequency and latency impact
+5. Verify brute-force scan terminates within both time and candidate budgets
+
+#### 3.5 Acceptance Test: Malicious Tail Manifest (MANDATORY)
+
+**Test**: A maliciously rewritten tail manifest that preserves CRC32C but
+changes hotset pointers must fail to mount under `Strict` policy, and must
+produce a logged, deterministic failure reason.
+
+```
+Test: Malicious Hotset Pointer Redirection
+==========================================
+
+Setup:
+  1. Create signed RVF file with 100K vectors, full HNSW index
+  2. Record the original centroid_seg_offset and centroid_content_hash
+  3. Identify a different valid INDEX_SEG in the file (e.g., Layer B)
+  4. Craft a new Level 0 manifest:
+     - Replace centroid_seg_offset with the Layer B segment offset
+     - Keep ALL other fields identical
+     - Recompute CRC32C at 0xFFC to match the modified manifest
+     - Do NOT re-sign (signature becomes invalid)
+  5. Overwrite last 4096 bytes of file with crafted manifest
+
+Verification under Strict policy:
+  1. Attempt: RvfStore::open_with_policy(&path, opts, SecurityPolicy::Strict)
+  2. MUST return Err(SecurityError::InvalidSignature)
+  3. The error MUST include:
+     - error_code: a stable, documented error code (not just a string)
+     - manifest_offset: byte offset of the rejected manifest
+     - expected_signer: public key fingerprint (if known)
+     - rejection_phase: "signature_verification" (not "content_hash")
+  4. The error MUST be logged at WARN level or higher
+  5. The file MUST NOT be queryable (no partial mount, no fallback)
+
+Verification under Paranoid policy:
+  Same as Strict, identical behavior.
+
+Verification under WarnOnly policy:
+  1. File opens successfully (warning logged)
+  2. Content hash verification runs on first hotset access
+  3. centroid_content_hash mismatches the actual segment payload
+  4. MUST return Err(SecurityError::ContentHashMismatch) on first query
+  5. The error MUST include:
+     - pointer_name: "centroid_seg_offset"
+     - expected_hash: the hash stored in Level 0
+     - actual_hash: the hash of the segment at the pointed offset
+     - seg_offset: the byte offset that was followed
+  6. System transitions to read-only mode, refuses further queries
+
+Verification under Permissive policy:
+  1. File opens successfully (no warning)
+  2. Queries execute against the wrong segment
+  3. Results are structurally valid but semantically wrong
+  4. ResponseQuality is NOT required to detect this (Permissive = no safety)
+  5. This is the EXPECTED AND DOCUMENTED behavior of Permissive mode
+
+Pass criteria:
+  - Strict/Paranoid: deterministic rejection, logged error, no mount
+  - WarnOnly: mount succeeds, content hash catches mismatch on first access
+  - Permissive: mount succeeds, no detection (by design)
+  - Error messages are stable across versions (code, not prose)
+  - No panic, no undefined behavior, no partial state leakage
+```
+
+**Test: Malicious Manifest with Re-signed Forgery**
+
+```
+Setup:
+  1. Same as above, but attacker also re-signs with a DIFFERENT key
+  2. File now has valid CRC32C AND valid signature — but wrong signer
+
+Verification under Strict policy:
+  1. MUST return Err(SecurityError::UnknownSigner)
+  2. Error includes the actual signer fingerprint
+  3. Error includes the expected signer fingerprint (from trust store)
+  4. File does not mount
+
+Pass criteria:
+  - The system distinguishes "no signature" from "wrong signer"
+  - Both produce distinct, documented error codes
+```
 
 ---
 
@@ -433,7 +669,7 @@ A store opened with `Strict` policy will reject any hotset pointer that fails co
 |-----------|-----------------|-------|
 | Content hashes (5 pointers * 16 bytes) | 80 B | Level 0 manifest |
 | Centroid epoch + drift fields | 8 B | Level 0 manifest |
-| ResultQuality field per result | 1 B | Query response |
+| ResponseQuality + DegradationReason | ~64 B | Per query response |
 | SecurityPolicy in options | 1 B | Runtime config |
 | Total Level 0 overhead | 96 B | Within existing 4096 B page |
 

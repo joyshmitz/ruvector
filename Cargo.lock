@@ -7883,6 +7883,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-attn-mincut"
+version = "2.0.3"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "ruvector-bench"
 version = "2.0.3"
 dependencies = [
@@ -8038,6 +8047,14 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "ruvector-coherence"
+version = "2.0.3"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -8863,6 +8880,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-profiler"
+version = "2.0.3"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "ruvector-raft"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9098,6 +9124,53 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "ruvector-solver"
+version = "2.0.3"
+dependencies = [
+ "approx",
+ "criterion 0.5.1",
+ "crossbeam",
+ "dashmap 6.1.0",
+ "getrandom 0.2.16",
+ "nalgebra 0.33.2",
+ "parking_lot 0.12.5",
+ "proptest",
+ "rand 0.8.5",
+ "rayon",
+ "serde",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
+name = "ruvector-solver-node"
+version = "2.0.3"
+dependencies = [
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "ruvector-solver",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "ruvector-solver-wasm"
+version = "2.0.3"
+dependencies = [
+ "getrandom 0.2.16",
+ "js-sys",
+ "ruvector-solver",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]
@@ -9424,6 +9497,7 @@ dependencies = [
  "ruvector-gnn 2.0.3",
  "ruvector-graph 2.0.3",
  "ruvector-math",
+ "ruvector-solver",
  "serde",
  "serde_json",
  "tempfile",
@@ -9590,6 +9664,7 @@ dependencies = [
  "axum-test 16.4.1",
  "clap",
  "http-body-util",
+ "mime_guess",
  "rvf-runtime",
  "rvf-types",
  "serde",
@@ -9597,6 +9672,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower 0.5.2",
+ "tower-http 0.6.8",
 ]
 
 [[package]]

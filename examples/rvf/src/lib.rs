@@ -11,3 +11,11 @@
 //! cargo run --example crypto_signing
 //! cargo run --example filtered_search
 //! ```
+//!
+//! Solver integration examples (sublinear solver + RVF):
+//!
+//! ```bash
+//! cargo run --example solver_witness        # convergence witness chains
+//! cargo run --example sparse_matrix_store   # CSR sparse matrix storage
+//! cargo run --example solver_benchmark      # benchmark result analysis
+//! ```

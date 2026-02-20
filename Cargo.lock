@@ -7883,6 +7883,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-attn-mincut"
+version = "2.0.3"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "ruvector-bench"
 version = "2.0.3"
 dependencies = [
@@ -9119,7 +9128,7 @@ dependencies = [
 
 [[package]]
 name = "ruvector-solver"
-version = "0.1.0"
+version = "2.0.3"
 dependencies = [
  "approx",
  "criterion 0.5.1",
@@ -9151,7 +9160,7 @@ dependencies = [
 
 [[package]]
 name = "ruvector-solver-wasm"
-version = "0.1.0"
+version = "2.0.3"
 dependencies = [
  "getrandom 0.2.16",
  "js-sys",
@@ -9655,6 +9664,7 @@ dependencies = [
  "axum-test 16.4.1",
  "clap",
  "http-body-util",
+ "mime_guess",
  "rvf-runtime",
  "rvf-types",
  "serde",
@@ -9662,6 +9672,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower 0.5.2",
+ "tower-http 0.6.8",
 ]
 
 [[package]]

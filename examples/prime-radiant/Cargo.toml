@@ -64,7 +64,7 @@ js-sys = { version = "0.3", optional = true }
 criterion = { version = "0.5", features = ["html_reports"], optional = true }
 
 # Sublinear solver for optimized SpMV and spectral operations
-ruvector-solver = { version = "0.1.0", path = "../../crates/ruvector-solver", default-features = false, features = ["neumann", "cg"] }
+ruvector-solver = { path = "../../crates/ruvector-solver", default-features = false, features = ["neumann", "cg"] }
 
 [dev-dependencies]
 proptest = "1.4"

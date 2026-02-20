@@ -1,14 +1,18 @@
 [package]
 name = "ruvector-solver-wasm"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 description = "WASM bindings for RuVector sublinear-time solver"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ruvector-solver = { path = "../ruvector-solver", default-features = false, features = ["wasm", "neumann", "forward-push", "cg"] }
+ruvector-solver = { version = "2.0.3", path = "../ruvector-solver", default-features = false, features = ["wasm", "neumann", "forward-push", "cg"] }
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 serde = { workspace = true, features = ["derive"] }

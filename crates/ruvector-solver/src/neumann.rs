@@ -273,7 +273,7 @@ impl NeumannSolver {
 
         let mut convergence_history = Vec::with_capacity(self.max_iterations.min(256));
         let mut prev_residual_norm = f64::MAX;
-        let mut final_residual_norm: f64;
+        let final_residual_norm: f64;
         let mut iterations_done: usize = 0;
 
         for k in 0..self.max_iterations {
@@ -347,7 +347,6 @@ impl NeumannSolver {
             }
 
             prev_residual_norm = residual_norm;
-            final_residual_norm = residual_norm;
         }
 
         // Exhausted iteration budget without converging.

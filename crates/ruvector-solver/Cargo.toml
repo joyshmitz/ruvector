@@ -1,9 +1,11 @@
 [package]
 name = "ruvector-solver"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.77"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 description = "Sublinear-time solver for RuVector: O(log n) to O(√n) algorithms for sparse linear systems, PageRank, and spectral methods"
 keywords = ["linear-algebra", "sparse-matrix", "pagerank", "solver", "sublinear"]
 categories = ["mathematics", "science", "algorithms"]

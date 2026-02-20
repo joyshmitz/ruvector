@@ -7,7 +7,8 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 description = "Memory, power, and latency profiling hooks with CSV emitters for benchmarking attention mechanisms"
-publish = false
+keywords = ["profiling", "benchmarking", "latency", "memory", "attention"]
+categories = ["development-tools::profiling", "science"]
 
 [dependencies]
 serde = { workspace = true }

@@ -9,7 +9,7 @@ repository.workspace = true
 readme = "README.md"
 description = "LLM serving runtime with Ruvector integration - Paged attention, KV cache, and SONA learning"
 keywords = ["llm", "inference", "paged-attention", "kv-cache", "ruvector"]
-categories = ["science", "algorithms", "machine-learning"]
+categories = ["science", "algorithms"]
 
 [dependencies]
 # Ruvector integration

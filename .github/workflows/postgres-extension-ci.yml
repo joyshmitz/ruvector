@@ -114,7 +114,7 @@ jobs:
         working-directory: crates/ruvector-postgres
 
       - name: Run tests
-        run: cargo pgrx test pg${{ matrix.pg_version }} --no-default-features
+        run: cargo pgrx test pg${{ matrix.pg_version }} --no-default-features --features pg${{ matrix.pg_version }}
         working-directory: crates/ruvector-postgres
 
   # Test with all features enabled
@@ -152,7 +152,7 @@ jobs:
 
       - name: Test with all features
         run: |
-          cargo pgrx test pg17 --no-default-features --features index-all,quant-all
+          cargo pgrx test pg17 --no-default-features --features pg17,index-all,quant-all
         working-directory: crates/ruvector-postgres
 
   # Benchmark on pull requests

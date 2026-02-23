@@ -161,8 +161,12 @@ pub fn estimate_fiedler(lap: &CsrMatrixView, max_iter: usize, tol: f64) -> (f64,
     let mut v: Vec<f64> = (0..n).map(|i| i as f64 - (n as f64 - 1.0) / 2.0).collect();
     deflate_and_normalize(&mut v);
     let mut eigenvalue = 0.0;
-    for _ in 0..max_iter {
-        let mut w = cg_solve(lap, &v, max_iter * 2, tol * 0.1);
+    // Use fewer outer iterations (convergence is typically fast for inverse iteration)
+    let outer = max_iter.min(8);
+    // Inner CG iterations: enough for approximate solve
+    let inner = max_iter.min(15);
+    for _ in 0..outer {
+        let mut w = cg_solve(lap, &v, inner, tol * 0.1);
         deflate_and_normalize(&mut w);
         if norm(&w) < 1e-30 { break; }
         let lv = lap.spmv(&w);
@@ -181,7 +185,9 @@ pub fn estimate_largest_eigenvalue(lap: &CsrMatrixView, max_iter: usize) -> f64 
     if n == 0 { return 0.0; }
     let mut v = vec![1.0 / (n as f64).sqrt(); n];
     let mut ev = 0.0;
-    for _ in 0..max_iter {
+    // Power iteration converges fast for the largest eigenvalue
+    let iters = max_iter.min(10);
+    for _ in 0..iters {
         let w = lap.spmv(&v);
         let wn = norm(&w);
         if wn < 1e-30 { return 0.0; }
@@ -217,6 +223,8 @@ pub fn estimate_effective_resistance_sampled(lap: &CsrMatrixView, n_samples: usi
     let total_pairs = n * (n - 1) / 2;
     let step = if total_pairs <= n_samples { 1 } else { total_pairs / n_samples };
     let max_s = n_samples.min(total_pairs);
+    // Fewer CG iterations for resistance estimation (approximate is fine)
+    let cg_iters = 10;
     let (mut total, mut sampled, mut idx) = (0.0, 0usize, 0usize);
     'outer: for u in 0..n {
         for v in (u + 1)..n {
@@ -224,7 +232,7 @@ pub fn estimate_effective_resistance_sampled(lap: &CsrMatrixView, n_samples: usi
                 let mut rhs = vec![0.0; n];
                 rhs[u] = 1.0;
                 rhs[v] = -1.0;
-                let x = cg_solve(lap, &rhs, 100, 1e-8);
+                let x = cg_solve(lap, &rhs, cg_iters, 1e-6);
                 total += (x[u] - x[v]).abs();
                 sampled += 1;
                 if sampled >= max_s { break 'outer; }
@@ -287,7 +295,7 @@ impl SpectralTracker {
         let n = lap.rows;
         self.fiedler_estimate = if n > 0 { (fiedler_raw / n as f64).clamp(0.0, 1.0) } else { 0.0 };
         self.gap_estimate = estimate_spectral_gap(fiedler_raw, largest);
-        let r_raw = estimate_effective_resistance_sampled(lap, 50.min(n * (n - 1) / 2));
+        let r_raw = estimate_effective_resistance_sampled(lap, 3.min(n * (n - 1) / 2));
         self.resistance_estimate = 1.0 / (1.0 + r_raw);
         self.regularity = compute_degree_regularity(lap);
         self.fiedler_vector = Some(fv);

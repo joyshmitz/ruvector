@@ -35,7 +35,8 @@ mod tests;
 use crate::algorithm::{self, MinCutConfig};
 use crate::graph::{DynamicGraph, VertexId, Weight};
 
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::cmp::Ordering;
+use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -420,6 +421,9 @@ impl CactusGraph {
 
     /// Stoer-Wagner algorithm that returns global min-cut value and all
     /// minimum-phase cuts whose value equals the global minimum.
+    ///
+    /// Tight dense implementation using flat arrays with no HashMap overhead.
+    /// For n <= 256 vertices the dense approach is fastest due to cache locality.
     fn stoer_wagner_all_cuts(
         adj: &HashMap<usize, HashMap<usize, f64>>,
     ) -> (f64, Vec<(Vec<usize>, Vec<usize>)>) {
@@ -428,61 +432,81 @@ impl CactusGraph {
             return (f64::INFINITY, Vec::new());
         }
 
-        // Build working structures
+        // Build compact index mapping using Vec instead of HashMap
         let node_ids: Vec<usize> = {
             let mut v: Vec<usize> = adj.keys().copied().collect();
             v.sort_unstable();
             v
         };
 
-        // map node_id -> index
-        let mut id_to_idx: HashMap<usize, usize> = HashMap::new();
+        let max_id = *node_ids.last().unwrap();
+        let mut id_to_idx = vec![usize::MAX; max_id + 1];
         for (i, &nid) in node_ids.iter().enumerate() {
-            id_to_idx.insert(nid, i);
+            id_to_idx[nid] = i;
         }
 
-        // Weight matrix (dense for small graphs, sparse is fine for now)
-        let mut w = vec![vec![0.0f64; n]; n];
+        // Flat weight matrix (dense, row-major, contiguous allocation)
+        let mut w: Vec<f64> = vec![0.0; n * n];
         for (&u, nbrs) in adj {
-            let ui = id_to_idx[&u];
+            let ui = id_to_idx[u];
+            let row = ui * n;
             for (&v, &wt) in nbrs {
-                let vi = id_to_idx[&v];
-                w[ui][vi] = wt;
+                let vi = id_to_idx[v];
+                w[row + vi] = wt;
             }
         }
 
         // Track which original vertices are merged into each super-node
         let mut merged: Vec<Vec<usize>> = node_ids.iter().map(|&v| vec![v]).collect();
-        let mut active: Vec<bool> = vec![true; n];
+        // Use a compact active-list (swap-remove for O(1) removal)
+        let mut active_list: Vec<usize> = (0..n).collect();
+        let mut active_pos: Vec<usize> = (0..n).collect(); // index in active_list
+        let mut n_active = n;
 
         let mut global_min = f64::INFINITY;
         let mut best_partitions: Vec<(Vec<usize>, Vec<usize>)> = Vec::new();
 
-        for phase in 0..(n - 1) {
-            // Maximum adjacency ordering
-            let mut in_a = vec![false; n];
-            let mut key = vec![0.0f64; n];
+        // Reusable per-phase buffers
+        let mut key: Vec<f64> = vec![0.0; n];
+        let mut in_a: Vec<bool> = vec![false; n];
 
-            // Find first active node
-            let first = (0..n).find(|&i| active[i]).unwrap();
+        for _phase in 0..(n - 1) {
+            if n_active <= 1 {
+                break;
+            }
+
+            // Reset per-phase state using active_list (touching only n_active nodes)
+            for k in 0..n_active {
+                let j = active_list[k];
+                in_a[j] = false;
+                key[j] = 0.0;
+            }
+
+            // Start with first active node
+            let first = active_list[0];
             in_a[first] = true;
-            for j in 0..n {
-                if active[j] {
-                    key[j] = w[first][j];
-                }
+            // Initialize keys from first's row
+            let first_row = first * n;
+            for k in 0..n_active {
+                let j = active_list[k];
+                key[j] = unsafe { *w.get_unchecked(first_row + j) };
             }
 
             let mut prev = first;
             let mut last = first;
 
-            for _ in 1..active.iter().filter(|&&a| a).count() {
-                // Find node with max key not in A
+            for _step in 1..n_active {
+                // Find max key among active nodes not in A
                 let mut best = usize::MAX;
                 let mut best_key = -1.0f64;
-                for j in 0..n {
-                    if active[j] && !in_a[j] && key[j] > best_key {
-                        best_key = key[j];
-                        best = j;
+                for k in 0..n_active {
+                    let j = active_list[k];
+                    if !in_a[j] {
+                        let kj = unsafe { *key.get_unchecked(j) };
+                        if kj > best_key {
+                            best_key = kj;
+                            best = j;
+                        }
                     }
                 }
 
@@ -494,10 +518,14 @@ impl CactusGraph {
                 prev = last;
                 last = best;
 
-                // Update keys
-                for j in 0..n {
-                    if active[j] && !in_a[j] {
-                        key[j] += w[best][j];
+                // Update keys from best's row (only active nodes not in A)
+                let best_row = best * n;
+                for k in 0..n_active {
+                    let j = active_list[k];
+                    if !in_a[j] {
+                        unsafe {
+                            *key.get_unchecked_mut(j) += *w.get_unchecked(best_row + j);
+                        }
                     }
                 }
             }
@@ -508,31 +536,49 @@ impl CactusGraph {
             if cut_value < global_min - 1e-12 {
                 global_min = cut_value;
                 best_partitions.clear();
-                // The partition: merged[last] vs everything else active
                 let part_s: Vec<usize> = merged[last].clone();
-                let part_t: Vec<usize> = (0..n)
-                    .filter(|&i| active[i] && i != last)
+                let part_t: Vec<usize> = (0..n_active)
+                    .map(|k| active_list[k])
+                    .filter(|&i| i != last)
                     .flat_map(|i| merged[i].iter().copied())
                     .collect();
                 best_partitions.push((part_s, part_t));
             } else if (cut_value - global_min).abs() < 1e-12 {
                 let part_s: Vec<usize> = merged[last].clone();
-                let part_t: Vec<usize> = (0..n)
-                    .filter(|&i| active[i] && i != last)
+                let part_t: Vec<usize> = (0..n_active)
+                    .map(|k| active_list[k])
+                    .filter(|&i| i != last)
                     .flat_map(|i| merged[i].iter().copied())
                     .collect();
                 best_partitions.push((part_s, part_t));
             }
 
-            // Merge last into prev
-            active[last] = false;
-            let last_merged = merged[last].clone();
+            // Merge last into prev: move last's merged list to prev
+            let last_merged = std::mem::take(&mut merged[last]);
             merged[prev].extend(last_merged);
 
-            for j in 0..n {
-                w[prev][j] += w[last][j];
-                w[j][prev] += w[j][last];
+            // Update weight matrix: merge last's row/col into prev's
+            let prev_row = prev * n;
+            let last_row = last * n;
+            for k in 0..n_active {
+                let j = active_list[k];
+                if j != last {
+                    unsafe {
+                        *w.get_unchecked_mut(prev_row + j) += *w.get_unchecked(last_row + j);
+                        *w.get_unchecked_mut(j * n + prev) += *w.get_unchecked(j * n + last);
+                    }
+                }
             }
+
+            // Remove last from active_list using swap-remove (O(1))
+            let pos = active_pos[last];
+            n_active -= 1;
+            if pos < n_active {
+                let swapped = active_list[n_active];
+                active_list[pos] = swapped;
+                active_pos[swapped] = pos;
+            }
+            active_list.truncate(n_active);
         }
 
         (global_min, best_partitions)
@@ -573,13 +619,19 @@ impl CactusGraph {
         // on the same side across all min-cuts belong to the same cactus node.
         let all_verts: BTreeSet<usize> = vertices_ids.iter().map(|&v| v as usize).collect();
 
+        // Pre-compute HashSets for each partition's side_a for O(1) lookups
+        let partition_sets: Vec<HashSet<usize>> = partitions
+            .iter()
+            .map(|(side_a, _)| side_a.iter().copied().collect())
+            .collect();
+
         // Assign a signature to each vertex: for each partition, is the
         // vertex in side A (true) or side B (false)?
         let mut signatures: HashMap<usize, Vec<bool>> = HashMap::new();
         for &v in &all_verts {
             let mut sig = Vec::with_capacity(partitions.len());
-            for (side_a, _) in partitions {
-                sig.push(side_a.contains(&v));
+            for set in &partition_sets {
+                sig.push(set.contains(&v));
             }
             signatures.insert(v, sig);
         }
@@ -630,9 +682,9 @@ impl CactusGraph {
 
                 // Check if there's a min-cut separating these groups
                 let mut separates = false;
-                for (side_a, side_b) in partitions {
-                    let i_in_a = side_a.contains(&cactus_vertices[i].original_vertices[0]);
-                    let j_in_a = side_a.contains(&cactus_vertices[j].original_vertices[0]);
+                for set in &partition_sets {
+                    let i_in_a = set.contains(&cactus_vertices[i].original_vertices[0]);
+                    let j_in_a = set.contains(&cactus_vertices[j].original_vertices[0]);
                     if i_in_a != j_in_a {
                         separates = true;
                         break;
@@ -835,20 +887,17 @@ impl CactusGraph {
     /// Compute cut value from a partition (sum of crossing edge weights).
     fn compute_cut_value_from_partition(&self, part_s: &[usize]) -> f64 {
         let s_set: HashSet<usize> = part_s.iter().copied().collect();
+        // Build id -> index map for O(1) lookup
+        let id_map: HashMap<u16, usize> = self.vertices.iter().enumerate()
+            .map(|(i, cv)| (cv.id, i)).collect();
         let mut total = 0.0f64;
 
         for e in &self.edges {
-            let src_in_s = self
-                .vertices
-                .iter()
-                .find(|cv| cv.id == e.source)
-                .map(|cv| cv.original_vertices.iter().any(|v| s_set.contains(v)))
+            let src_in_s = id_map.get(&e.source)
+                .map(|&i| self.vertices[i].original_vertices.iter().any(|v| s_set.contains(v)))
                 .unwrap_or(false);
-            let tgt_in_s = self
-                .vertices
-                .iter()
-                .find(|cv| cv.id == e.target)
-                .map(|cv| cv.original_vertices.iter().any(|v| s_set.contains(v)))
+            let tgt_in_s = id_map.get(&e.target)
+                .map(|&i| self.vertices[i].original_vertices.iter().any(|v| s_set.contains(v)))
                 .unwrap_or(false);
 
             if src_in_s != tgt_in_s {
@@ -862,30 +911,27 @@ impl CactusGraph {
     /// Compute cut edges (original graph edges) for a partition.
     fn compute_cut_edges(&self, part_s: &[usize]) -> Vec<(usize, usize, f64)> {
         let s_set: HashSet<usize> = part_s.iter().copied().collect();
+        // Build id -> index map for O(1) lookup
+        let id_map: HashMap<u16, usize> = self.vertices.iter().enumerate()
+            .map(|(i, cv)| (cv.id, i)).collect();
         let mut cut_edges = Vec::new();
 
         for e in &self.edges {
-            let src_verts = self
-                .vertices
-                .iter()
-                .find(|cv| cv.id == e.source)
-                .map(|cv| &cv.original_vertices)
-                .cloned()
-                .unwrap_or_default();
-            let tgt_verts = self
-                .vertices
-                .iter()
-                .find(|cv| cv.id == e.target)
-                .map(|cv| &cv.original_vertices)
-                .cloned()
-                .unwrap_or_default();
+            let src_idx = id_map.get(&e.source).copied();
+            let tgt_idx = id_map.get(&e.target).copied();
 
-            let src_in_s = src_verts.iter().any(|v| s_set.contains(v));
-            let tgt_in_s = tgt_verts.iter().any(|v| s_set.contains(v));
+            let src_in_s = src_idx
+                .map(|i| self.vertices[i].original_vertices.iter().any(|v| s_set.contains(v)))
+                .unwrap_or(false);
+            let tgt_in_s = tgt_idx
+                .map(|i| self.vertices[i].original_vertices.iter().any(|v| s_set.contains(v)))
+                .unwrap_or(false);
 
             if src_in_s != tgt_in_s {
                 // Add representative edge
-                if let (Some(&su), Some(&tv)) = (src_verts.first(), tgt_verts.first()) {
+                let su = src_idx.and_then(|i| self.vertices[i].original_vertices.first().copied());
+                let tv = tgt_idx.and_then(|i| self.vertices[i].original_vertices.first().copied());
+                if let (Some(su), Some(tv)) = (su, tv) {
                     cut_edges.push((su, tv, e.weight.to_f64()));
                 }
             }

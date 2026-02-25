@@ -8520,6 +8520,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-graph-transformer"
+version = "2.0.4"
+dependencies = [
+ "proptest",
+ "rand 0.8.5",
+ "ruvector-attention",
+ "ruvector-coherence",
+ "ruvector-gnn",
+ "ruvector-mincut 2.0.4",
+ "ruvector-solver",
+ "ruvector-verified",
+ "serde",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "ruvector-graph-transformer-node"
+version = "2.0.4"
+dependencies = [
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "ruvector-graph-transformer-wasm"
+version = "2.0.4"
+dependencies = [
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+]
+
+[[package]]
 name = "ruvector-graph-wasm"
 version = "2.0.4"
 dependencies = [

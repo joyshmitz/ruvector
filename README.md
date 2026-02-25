@@ -31,11 +31,12 @@ Most vector databases are static — they store embeddings and search them. That
 | 📈 **Scales horizontally** | 💰 Paid tiers | ✅ Add nodes freely, no per-vector fees |
 | 🌿 **Git-like branching** | ❌ | ✅ Branch your data like code — only changes are copied |
 | ⚡ **Sublinear Solvers** | ❌ | ✅ O(log n) sparse linear systems, PageRank, spectral methods |
+| 🔬 **Proof-Gated Graph Transformers** | ❌ | ✅ 8 verified modules: physics, bio, manifold, temporal, economic |
 
-**One package. Everything included:** vector search, graph queries, GNN learning, distributed clustering, local LLMs, 46 attention mechanisms, cognitive containers ([RVF](./crates/rvf/README.md) — self-booting `.rvf` files with eBPF, witness chains, and COW branching), and WASM support.
+**One package. Everything included:** vector search, graph queries, GNN learning, [proof-gated graph transformers](./crates/ruvector-graph-transformer) (8 verified modules — physics, biological, manifold, temporal, economic), distributed clustering, local LLMs, 46 attention mechanisms, cognitive containers ([RVF](./crates/rvf/README.md) — self-booting `.rvf` files with eBPF, witness chains, and COW branching), and WASM support.
 
 <details>
-<summary>📋 See Full Capabilities (51 features)</summary>
+<summary>📋 See Full Capabilities (53 features)</summary>
 
 **Core Vector Database**
 | # | Capability | What It Does |
@@ -70,6 +71,8 @@ Most vector databases are static — they store embeddings and search them. That
 | 20 | **Sona Learning in SQL** | Micro-LoRA trajectory learning with EWC++ forgetting prevention |
 | 21 | **Domain Expansion** | Cross-domain transfer learning with contextual bandits |
 | 22 | **Extended Attention** | O(n) linear, MoE, hyperbolic, sliding window attention in SQL |
+| 52 | **Proof-Gated Graph Transformers** | 8 verified modules: every graph mutation requires a formal proof |
+| 53 | **Verified Training** | Training with certificates, delta-apply rollback, fail-closed invariants |
 
 **Cognitive Containers ([RVF](./crates/rvf/README.md))**
 | # | Capability | What It Does |
@@ -480,6 +483,7 @@ cargo add ruvector-raft ruvector-cluster ruvector-replication
 | **SONA** | Two-tier LoRA + EWC++ + ReasoningBank | Runtime learning without retraining |
 | **Local Embeddings** | 8+ ONNX models built-in | No external API needed |
 | **[Verified Proofs](./crates/ruvector-verified)** | 82-byte proof attestations per vector op | Structural trust, not just assertions |
+| **[Graph Transformers](./crates/ruvector-graph-transformer)** | 8 proof-gated modules: physics, bio, manifold, temporal, economic | Every graph mutation is mathematically verified |
 
 ### Specialized Processing
 
@@ -1539,6 +1543,70 @@ cd examples/rvf && cargo run --example claude_code_appliance
 ```
 
 Final file: **5.1 MB single `.rvf`** — boots Linux, serves queries, runs Claude Code. One file. Boots on QEMU/Firecracker. Runs SSH. Serves vectors. Installs Claude Code. Proves every step with a cryptographic witness chain.
+
+### Graph Transformer
+
+[![Crates.io](https://img.shields.io/crates/v/ruvector-graph-transformer.svg)](https://crates.io/crates/ruvector-graph-transformer)
+
+| Crate | Description | Registry |
+|-------|-------------|----------|
+| [ruvector-graph-transformer](./crates/ruvector-graph-transformer) | Unified graph transformer with proof-gated mutation substrate (8 modules, 186 tests) | [![crates.io](https://img.shields.io/crates/v/ruvector-graph-transformer.svg)](https://crates.io/crates/ruvector-graph-transformer) |
+| [ruvector-graph-transformer-wasm](./crates/ruvector-graph-transformer-wasm) | WASM bindings for browser-side graph transformers | [![crates.io](https://img.shields.io/crates/v/ruvector-graph-transformer-wasm.svg)](https://crates.io/crates/ruvector-graph-transformer-wasm) |
+| [ruvector-graph-transformer-node](./crates/ruvector-graph-transformer-node) | Node.js NAPI-RS bindings (22+ methods, 20 tests) | [![npm](https://img.shields.io/npm/v/@ruvector/graph-transformer.svg)](https://www.npmjs.com/package/@ruvector/graph-transformer) |
+
+**What it does:** Every time you modify a graph — adding a node, changing an edge weight, updating a vector — the graph transformer requires a formal proof that the operation is valid *before* it executes. Think of it like a type system for graph mutations: you can't accidentally corrupt your data because the system mathematically verifies every change.
+
+On top of that proof layer, 8 specialized modules handle different aspects of graph intelligence:
+
+| Module | What It Does (Plain English) | Feature Flag |
+|--------|------------------------------|--------------|
+| **Proof-Gated Mutation** | Locks graph data behind mathematical proofs — no proof, no access | always on |
+| **Sublinear Attention** | Finds the most important nodes without checking every single one — scales to millions | `sublinear` |
+| **Physics-Informed** | Applies physics equations (conservation of energy, symmetry) to message passing | `physics` |
+| **Biological** | Models neurons that only fire when excited enough — naturally sparse, energy-efficient | `biological` |
+| **Self-Organizing** | Graphs that grow and reorganize themselves like biological development | `self-organizing` |
+| **Verified Training** | Training with a receipt — if a gradient step would break an invariant, it's automatically rolled back | `verified-training` |
+| **Manifold** | Operates in curved spaces (like the surface of a sphere) instead of just flat Euclidean space | `manifold` |
+| **Temporal-Causal** | Enforces that information flows forward in time — no peeking at the future | `temporal` |
+| **Economic** | Uses game theory to allocate attention fairly — Nash equilibrium for node importance | `economic` |
+
+```bash
+# Rust
+cargo add ruvector-graph-transformer --features full
+
+# Node.js
+npm install @ruvector/graph-transformer
+```
+
+```rust
+use ruvector_graph_transformer::sublinear_attention::SublinearGraphAttention;
+use ruvector_graph_transformer::config::SublinearConfig;
+
+let attn = SublinearGraphAttention::new(128, SublinearConfig::default());
+let outputs = attn.lsh_attention(&features).unwrap(); // O(n log n)
+```
+
+```javascript
+const { GraphTransformer } = require('@ruvector/graph-transformer');
+const gt = new GraphTransformer();
+
+// Every operation produces a proof receipt
+const proof = gt.proveDimension(128, 128);
+const attestation = gt.createAttestation(proof.proof_id); // 82 bytes
+```
+
+<details>
+<summary>Graph Transformer Architecture Details</summary>
+
+**Proof-gated mutation** means `state_n -> proof(invariant) -> mutation -> state_n+1`. The `ProofGate<T>` type wraps any value so you literally cannot access the inner data without first producing a valid proof. This is enforced at the type level in Rust and at runtime in WASM/Node.js.
+
+**Sublinear attention** uses three strategies: (1) locality-sensitive hashing groups similar nodes into buckets, (2) personalized PageRank samples the most relevant neighbors via random walks, (3) spectral sparsification prunes edges that don't contribute to graph connectivity. All three reduce O(n^2) full attention to O(n log n).
+
+**Verified training** uses a delta-apply architecture: gradients go to a scratch buffer first, invariants are checked against the proposed weights (loss stability, weight norms, Lipschitz bounds, energy gates), and only if all checks pass are the weights committed. If any check fails and `fail_closed = true`, the step is rejected and the old weights are preserved. Every successful step produces a `TrainingCertificate` with BLAKE3 hashes of weights, config, and dataset manifest.
+
+**10 ADRs** document every design decision: [ADR-046](./docs/adr/ADR-046-graph-transformer-architecture.md) through [ADR-055](./docs/adr/ADR-055-manifold-graph-layers.md).
+
+</details>
 
 ### Personal AI Memory (OSpipe)
 

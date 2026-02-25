@@ -106,6 +106,9 @@ members = [
     "crates/ruvector-cognitive-container",
     "crates/ruvector-verified",
     "crates/ruvector-verified-wasm",
+    "crates/ruvector-graph-transformer",
+    "crates/ruvector-graph-transformer-wasm",
+    "crates/ruvector-graph-transformer-node",
     "examples/rvf-kernel-optimized",
     "examples/verified-applications",
 ]

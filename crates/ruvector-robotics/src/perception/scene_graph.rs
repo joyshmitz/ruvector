@@ -99,6 +99,7 @@ impl PointCloudSceneGraphBuilder {
     // -- private helpers ----------------------------------------------------
 
     fn cluster_to_object(id: usize, points: &[Point3D]) -> SceneObject {
+        debug_assert!(!points.is_empty(), "cluster_to_object called with empty slice");
         let (mut min_x, mut min_y, mut min_z) = (f64::MAX, f64::MAX, f64::MAX);
         let (mut max_x, mut max_y, mut max_z) = (f64::MIN, f64::MIN, f64::MIN);
         let (mut sum_x, mut sum_y, mut sum_z) = (0.0_f64, 0.0_f64, 0.0_f64);

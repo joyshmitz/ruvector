@@ -31,10 +31,19 @@ impl PartialOrd for MaxDistEntry {
 
 impl Ord for MaxDistEntry {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Reverse: larger distance = higher priority in the max-heap.
+        // Larger distance = higher priority in the max-heap.
+        // NaN is treated as maximally distant so it gets evicted first.
         self.distance
             .partial_cmp(&other.distance)
-            .unwrap_or(Ordering::Equal)
+            .unwrap_or_else(|| {
+                if self.distance.is_nan() && other.distance.is_nan() {
+                    Ordering::Equal
+                } else if self.distance.is_nan() {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                }
+            })
     }
 }
 
@@ -86,7 +95,7 @@ fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     if denom < f32::EPSILON {
         return 1.0; // zero-vectors are maximally dissimilar
     }
-    1.0 - (dot / denom)
+    (1.0 - (dot / denom).clamp(-1.0, 1.0)).max(0.0)
 }
 
 /// A flat spatial index that stores points as dense vectors.
@@ -186,7 +195,7 @@ impl SpatialIndex {
         radius: f32,
     ) -> Result<Vec<(usize, f32)>, IndexError> {
         if self.points.is_empty() {
-            return Err(IndexError::EmptyIndex);
+            return Ok(Vec::new());
         }
         if center.len() != self.dimensions {
             return Err(IndexError::DimensionMismatch {
@@ -355,8 +364,8 @@ mod tests {
     #[test]
     fn test_search_radius_empty_index() {
         let idx = SpatialIndex::new(3);
-        let err = idx.search_radius(&[0.0, 0.0, 0.0], 1.0).unwrap_err();
-        assert_eq!(err, IndexError::EmptyIndex);
+        let results = idx.search_radius(&[0.0, 0.0, 0.0], 1.0).unwrap();
+        assert!(results.is_empty());
     }
 
     #[test]

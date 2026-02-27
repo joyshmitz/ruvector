@@ -474,6 +474,7 @@ impl PerceptionPipeline {
     // -- private helpers ----------------------------------------------------
 
     fn bounding_sphere(points: &[Point3D]) -> ([f64; 3], f64) {
+        debug_assert!(!points.is_empty(), "bounding_sphere called with empty slice");
         let n = points.len() as f64;
         let (mut sx, mut sy, mut sz) = (0.0_f64, 0.0_f64, 0.0_f64);
         for p in points {

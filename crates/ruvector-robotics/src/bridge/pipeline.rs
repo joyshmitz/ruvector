@@ -10,8 +10,6 @@ use std::time::Instant;
 /// Configuration for the perception pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineConfig {
-    /// Number of neighbours returned by spatial search during obstacle detection.
-    pub spatial_search_k: usize,
     /// Points within this radius (metres) of the robot are classified as obstacles.
     pub obstacle_radius: f64,
     /// Whether to predict linear trajectories from consecutive frames.
@@ -21,7 +19,6 @@ pub struct PipelineConfig {
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
-            spatial_search_k: 10,
             obstacle_radius: 2.0,
             track_trajectories: true,
         }
@@ -354,13 +351,12 @@ mod tests {
     #[test]
     fn test_pipeline_config_serde() {
         let cfg = PipelineConfig {
-            spatial_search_k: 20,
             obstacle_radius: 3.5,
             track_trajectories: false,
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let restored: PipelineConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored.spatial_search_k, 20);
+        assert!((restored.obstacle_radius - 3.5).abs() < f64::EPSILON);
         assert!(!restored.track_trajectories);
     }
 

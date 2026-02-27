@@ -384,7 +384,12 @@ impl RoboticsDomain {
         };
 
         let correctness = coverage.min(1.0);
-        let efficiency = if sol.edges.len() <= expected_objects * (expected_objects - 1) / 2 {
+        let max_edges = if expected_objects >= 2 {
+            expected_objects * (expected_objects - 1) / 2
+        } else {
+            0
+        };
+        let efficiency = if sol.edges.len() <= max_edges {
             0.9
         } else {
             0.5
@@ -500,7 +505,7 @@ impl RoboticsDomain {
         let mut features = vec![0.0f32; EMBEDDING_DIM];
 
         // Parse the structured solution if present.
-        let sol: RoboticsSolution = serde_json::from_str(&solution.data.to_string())
+        let sol: RoboticsSolution = serde_json::from_value(solution.data.clone())
             .or_else(|_| serde_json::from_str(content))
             .unwrap_or(RoboticsSolution {
                 waypoints: Vec::new(),
@@ -633,7 +638,7 @@ impl Domain for RoboticsDomain {
             Err(e) => return Evaluation::zero(vec![format!("Invalid task spec: {}", e)]),
         };
 
-        let sol: RoboticsSolution = serde_json::from_str(&solution.data.to_string())
+        let sol: RoboticsSolution = serde_json::from_value(solution.data.clone())
             .or_else(|_| serde_json::from_str(&solution.content))
             .unwrap_or(RoboticsSolution {
                 waypoints: Vec::new(),
@@ -666,8 +671,9 @@ impl Domain for RoboticsDomain {
         let sol = match spec.category {
             RoboticsCategory::PointCloudClustering => {
                 // Assign each point-group to its own cluster.
+                let num_clusters = spec.obstacles.len().max(1);
                 let cluster_ids: Vec<usize> = (0..spec.size)
-                    .map(|i| i / (spec.size / spec.obstacles.len().max(1)).max(1))
+                    .map(|i| i * num_clusters / spec.size.max(1))
                     .collect();
                 RoboticsSolution {
                     waypoints: Vec::new(),

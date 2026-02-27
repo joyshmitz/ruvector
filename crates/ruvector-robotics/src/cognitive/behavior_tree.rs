@@ -93,11 +93,11 @@ impl BehaviorTree {
     /// Tick the tree once, returning the root status.
     pub fn tick(&mut self) -> BehaviorStatus {
         self.context.tick_count += 1;
-        // SAFETY: We split the borrow — `eval` reads `root` immutably and
-        // mutates `context`.  Taking a raw pointer avoids cloning the entire
-        // tree on every tick.
-        let root_ptr: *const BehaviorNode = &self.root;
-        eval(unsafe { &*root_ptr }, &mut self.context)
+        // Split borrow: `root` is borrowed immutably, `context` mutably.
+        // Rust allows this because they are disjoint struct fields.
+        let root = &self.root;
+        let ctx = &mut self.context;
+        eval(root, ctx)
     }
 
     /// Reset the context (tick count, blackboard, etc.).

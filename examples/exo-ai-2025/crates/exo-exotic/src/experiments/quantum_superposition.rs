@@ -55,7 +55,8 @@ impl CognitiveState {
         // Normalize to unit vector
         let total_sq: f64 = candidates.iter().map(|(_, s)| s * s).sum::<f64>();
         let norm = total_sq.sqrt().max(1e-10);
-        self.candidates = candidates.iter()
+        self.candidates = candidates
+            .iter()
             .map(|&(id, score)| (id, score / norm, 0.0))
             .collect();
         self.age = 0.0;
@@ -65,7 +66,9 @@ impl CognitiveState {
     pub fn interfere(&mut self, similarity_matrix: &HashMap<(u64, u64), f64>) {
         // Unitary transformation: U|ψ⟩ where U_ij = similarity_ij / N
         let n = self.candidates.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
         let mut new_re = vec![0.0f64; n];
         let mut new_im = vec![0.0f64; n];
         for (i, (id_i, _, _)) in self.candidates.iter().enumerate() {
@@ -79,16 +82,23 @@ impl CognitiveState {
             }
         }
         for (i, (_, re, im)) in self.candidates.iter_mut().enumerate() {
-            *re = new_re[i]; *im = new_im[i];
+            *re = new_re[i];
+            *im = new_im[i];
         }
         self.normalize();
     }
 
     fn normalize(&mut self) {
-        let norm = self.candidates.iter().map(|(_, r, i)| r*r + i*i).sum::<f64>().sqrt();
+        let norm = self
+            .candidates
+            .iter()
+            .map(|(_, r, i)| r * r + i * i)
+            .sum::<f64>()
+            .sqrt();
         if norm > 1e-10 {
             for (_, re, im) in self.candidates.iter_mut() {
-                *re /= norm; *im /= norm;
+                *re /= norm;
+                *im /= norm;
             }
         }
     }
@@ -98,27 +108,32 @@ impl CognitiveState {
         self.age += dt;
         let t2_factor = (-self.age / self.t2_cognitive).exp();
         for (_, re, im) in self.candidates.iter_mut() {
-            *re *= t2_factor; *im *= t2_factor;
+            *re *= t2_factor;
+            *im *= t2_factor;
         }
     }
 
     /// Current purity Tr(ρ²)
     pub fn purity(&self) -> f64 {
-        self.candidates.iter().map(|(_, r, i)| r*r + i*i).sum()
+        self.candidates.iter().map(|(_, r, i)| r * r + i * i).sum()
     }
 
     /// Collapse: select interpretation by measurement (Born rule: probability ∝ |amplitude|²)
     pub fn collapse(&self) -> CollapseResult {
-        let probs: Vec<(u64, f64)> = self.candidates.iter()
+        let probs: Vec<(u64, f64)> = self
+            .candidates
+            .iter()
             .map(|&(id, re, im)| (id, re * re + im * im))
             .collect();
 
-        let best = probs.iter()
+        let best = probs
+            .iter()
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
             .copied()
             .unwrap_or((0, 0.0));
 
-        let alternatives: Vec<(u64, f64)> = probs.iter()
+        let alternatives: Vec<(u64, f64)> = probs
+            .iter()
             .filter(|&&(id, p)| id != best.0 && p > 0.05)
             .copied()
             .collect();
@@ -158,7 +173,11 @@ pub struct SuperpositionResult {
 
 impl QuantumSuperpositionExperiment {
     pub fn new() -> Self {
-        Self { t2_cognitive: 20.0, n_candidates: 8, interference_steps: 3 }
+        Self {
+            t2_cognitive: 20.0,
+            n_candidates: 8,
+            interference_steps: 3,
+        }
     }
 
     pub fn run(&self, n_trials: usize) -> SuperpositionResult {
@@ -183,11 +202,14 @@ impl QuantumSuperpositionExperiment {
                 .collect();
 
             // Greedy: just take argmax
-            let greedy_choice = candidates.iter()
+            let greedy_choice = candidates
+                .iter()
                 .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
                 .map(|(id, _)| *id)
                 .unwrap_or(0);
-            if greedy_choice == correct_id { greedy_correct += 1; }
+            if greedy_choice == correct_id {
+                greedy_correct += 1;
+            }
 
             // Superposition: maintain, interfere, collapse when T2 exceeded
             let mut state = CognitiveState::new(self.t2_cognitive);
@@ -197,9 +219,13 @@ impl QuantumSuperpositionExperiment {
             let mut sim_matrix = HashMap::new();
             for i in 0..self.n_candidates as u64 {
                 for j in i..self.n_candidates as u64 {
-                    let sim = if i == j { 1.0 }
-                    else if i == correct_id || j == correct_id { 0.6 }
-                    else { 0.2 };
+                    let sim = if i == j {
+                        1.0
+                    } else if i == correct_id || j == correct_id {
+                        0.6
+                    } else {
+                        0.2
+                    };
                     sim_matrix.insert((i, j), sim);
                 }
             }
@@ -208,11 +234,15 @@ impl QuantumSuperpositionExperiment {
             for _ in 0..self.interference_steps {
                 state.interfere(&sim_matrix);
                 state.decohere(5.0);
-                if state.should_collapse() { break; }
+                if state.should_collapse() {
+                    break;
+                }
             }
 
             let result = state.collapse();
-            if result.collapsed_id == correct_id { superposition_correct += 1; }
+            if result.collapsed_id == correct_id {
+                superposition_correct += 1;
+            }
             total_confidence += result.confidence;
             total_duration += result.ticks_in_superposition;
         }
@@ -231,7 +261,9 @@ impl QuantumSuperpositionExperiment {
 }
 
 impl Default for QuantumSuperpositionExperiment {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -243,14 +275,20 @@ mod tests {
         let mut state = CognitiveState::new(20.0);
         state.load(&[(0, 0.6), (1, 0.8), (2, 0.3)]);
         let purity = state.purity();
-        assert!((purity - 1.0).abs() < 1e-9, "State should be normalized: purity={}", purity);
+        assert!(
+            (purity - 1.0).abs() < 1e-9,
+            "State should be normalized: purity={}",
+            purity
+        );
     }
 
     #[test]
     fn test_decoherence_reduces_purity() {
         let mut state = CognitiveState::new(10.0);
         state.load(&[(0, 0.7), (1, 0.3), (2, 0.5), (3, 0.2)]);
-        for _ in 0..5 { state.decohere(5.0); }
+        for _ in 0..5 {
+            state.decohere(5.0);
+        }
         assert!(state.purity() < 0.9, "Decoherence should reduce purity");
     }
 

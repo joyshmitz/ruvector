@@ -41,12 +41,7 @@ impl Params {
 /// Proposes flipping spin `i` (chosen uniformly at random), accepts with the
 /// Boltzmann probability, and charges `p.irreversible_cost` on each accepted
 /// non-zero-ΔE transition.
-pub fn step_discrete<M: EnergyModel>(
-    model: &M,
-    s: &mut State,
-    p: &Params,
-    rng: &mut impl Rng,
-) {
+pub fn step_discrete<M: EnergyModel>(model: &M, s: &mut State, p: &Params, rng: &mut impl Rng) {
     let n = s.x.len();
     if n == 0 {
         return;
@@ -83,12 +78,7 @@ pub fn step_discrete<M: EnergyModel>(
 /// where ξ ~ N(0,1).  The gradient is estimated by central differences.
 ///
 /// Optionally clips activations to `[-1, 1]` after the update.
-pub fn step_continuous<M: EnergyModel>(
-    model: &M,
-    s: &mut State,
-    p: &Params,
-    rng: &mut impl Rng,
-) {
+pub fn step_continuous<M: EnergyModel>(model: &M, s: &mut State, p: &Params, rng: &mut impl Rng) {
     let n = s.x.len();
     let eps = 1e-3_f32;
 

@@ -3,7 +3,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use rand::SeedableRng;
 use thermorust::{
-    dynamics::{anneal_discrete, anneal_continuous, Params, step_discrete},
+    dynamics::{anneal_continuous, anneal_discrete, step_discrete, Params},
     energy::{Couplings, EnergyModel, Ising},
     motifs::{IsingMotif, SoftSpinMotif},
     State,
@@ -18,7 +18,12 @@ fn bench_discrete_step(c: &mut Criterion) {
             let mut s = State::ones(n);
             let mut rng = rand::rngs::SmallRng::seed_from_u64(1);
             b.iter(|| {
-                step_discrete(black_box(&model), black_box(&mut s), black_box(&p), &mut rng);
+                step_discrete(
+                    black_box(&model),
+                    black_box(&mut s),
+                    black_box(&p),
+                    &mut rng,
+                );
             });
         });
     }

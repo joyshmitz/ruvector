@@ -16,17 +16,26 @@ pub struct State {
 impl State {
     /// Construct a new state with all spins set to `+1`.
     pub fn ones(n: usize) -> Self {
-        Self { x: vec![1.0; n], dissipated_j: 0.0 }
+        Self {
+            x: vec![1.0; n],
+            dissipated_j: 0.0,
+        }
     }
 
     /// Construct a new state with all spins set to `-1`.
     pub fn neg_ones(n: usize) -> Self {
-        Self { x: vec![-1.0; n], dissipated_j: 0.0 }
+        Self {
+            x: vec![-1.0; n],
+            dissipated_j: 0.0,
+        }
     }
 
     /// Construct a state from an explicit activation vector.
     pub fn from_vec(x: Vec<f32>) -> Self {
-        Self { x, dissipated_j: 0.0 }
+        Self {
+            x,
+            dissipated_j: 0.0,
+        }
     }
 
     /// Number of units in the motif.

@@ -23,7 +23,12 @@ pub struct NeuralField {
 impl NeuralField {
     pub fn new(id: u64, dims: Vec<usize>, bandwidth: f32) -> Self {
         let total: usize = dims.iter().product();
-        Self { id, values: vec![0.0f32; total], dims, bandwidth }
+        Self {
+            id,
+            values: vec![0.0f32; total],
+            dims,
+            bandwidth,
+        }
     }
 
     /// Encode a pattern as a neural field (Gaussian RBF superposition)
@@ -41,8 +46,15 @@ impl NeuralField {
         }
         // Normalize
         let max = values.iter().cloned().fold(0.0f32, f32::max).max(1e-6);
-        for v in values.iter_mut() { *v /= max; }
-        Self { id, values, dims: vec![n], bandwidth }
+        for v in values.iter_mut() {
+            *v /= max;
+        }
+        Self {
+            id,
+            values,
+            dims: vec![n],
+            bandwidth,
+        }
     }
 
     /// Query the field at position t ∈ [0,1]
@@ -58,10 +70,13 @@ impl NeuralField {
     /// Compute overlap integral ∫ f₁(t)·f₂(t)dt (inner product of fields)
     pub fn overlap(&self, other: &NeuralField) -> f32 {
         let n = self.values.len().min(other.values.len());
-        self.values.iter().zip(other.values.iter())
+        self.values
+            .iter()
+            .zip(other.values.iter())
             .take(n)
             .map(|(a, b)| a * b)
-            .sum::<f32>() / n as f32
+            .sum::<f32>()
+            / n as f32
     }
 }
 
@@ -80,7 +95,10 @@ pub struct FieldQueryResult {
 
 impl FieldStore {
     pub fn new() -> Self {
-        Self { fields: Vec::new(), simulated_mmap_us: 1 }
+        Self {
+            fields: Vec::new(),
+            simulated_mmap_us: 1,
+        }
     }
 
     pub fn store(&mut self, field: NeuralField) {
@@ -89,7 +107,9 @@ impl FieldStore {
 
     pub fn query_top_k(&self, query: &NeuralField, k: usize) -> Vec<FieldQueryResult> {
         let t0 = std::time::Instant::now();
-        let mut results: Vec<FieldQueryResult> = self.fields.iter()
+        let mut results: Vec<FieldQueryResult> = self
+            .fields
+            .iter()
             .map(|f| FieldQueryResult {
                 id: f.id,
                 overlap: f.overlap(query),
@@ -99,15 +119,21 @@ impl FieldStore {
         results.sort_unstable_by(|a, b| b.overlap.partial_cmp(&a.overlap).unwrap());
         results.truncate(k);
         let elapsed = t0.elapsed().as_micros() as u64;
-        for r in results.iter_mut() { r.access_us = elapsed; }
+        for r in results.iter_mut() {
+            r.access_us = elapsed;
+        }
         results
     }
 
-    pub fn len(&self) -> usize { self.fields.len() }
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
 }
 
 impl Default for FieldStore {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub struct MemoryMappedFieldsExperiment {
@@ -127,7 +153,12 @@ pub struct MmapFieldResult {
 
 impl MemoryMappedFieldsExperiment {
     pub fn new() -> Self {
-        Self { store: FieldStore::new(), n_patterns: 20, pattern_dim: 128, bandwidth: 0.1 }
+        Self {
+            store: FieldStore::new(),
+            n_patterns: 20,
+            pattern_dim: 128,
+            bandwidth: 0.1,
+        }
     }
 
     pub fn run(&mut self) -> MmapFieldResult {
@@ -149,9 +180,7 @@ impl MemoryMappedFieldsExperiment {
         let mut total_latency = 0u64;
 
         for (i, pattern) in patterns.iter().enumerate() {
-            let noisy: Vec<f32> = pattern.iter()
-                .map(|&v| v + (v * 0.05))
-                .collect();
+            let noisy: Vec<f32> = pattern.iter().map(|&v| v + (v * 0.05)).collect();
             let query = NeuralField::encode_pattern(999, &noisy, self.bandwidth);
             let results = self.store.query_top_k(&query, 3);
             if let Some(top) = results.first() {
@@ -177,7 +206,9 @@ impl MemoryMappedFieldsExperiment {
 }
 
 impl Default for MemoryMappedFieldsExperiment {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

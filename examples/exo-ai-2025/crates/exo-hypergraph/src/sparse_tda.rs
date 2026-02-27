@@ -109,9 +109,7 @@ impl ForwardPushPpr {
             for (v, w) in neighbors {
                 let contribution = push_amount * w / d_u;
                 residual[v as usize] += contribution;
-                if residual[v as usize]
-                    >= threshold * out_weights[v as usize].max(1.0)
-                {
+                if residual[v as usize] >= threshold * out_weights[v as usize].max(1.0) {
                     if !queue.contains(&v) {
                         queue.push(v);
                     }
@@ -182,8 +180,7 @@ impl SparseRipsComplex {
         selected_edges
             .into_iter()
             .filter_map(|(u, v)| {
-                let dist =
-                    euclidean_dist(&points[u as usize], &points[v as usize]);
+                let dist = euclidean_dist(&points[u as usize], &points[v as usize]);
                 if dist <= self.max_radius {
                     Some(SimplexEdge { u, v, weight: dist })
                 } else {
@@ -194,11 +191,7 @@ impl SparseRipsComplex {
     }
 
     /// Compute H0 persistence (connected components) from sparse 1-skeleton.
-    pub fn compute_h0(
-        &self,
-        n_points: usize,
-        edges: &[SimplexEdge],
-    ) -> Vec<PersistenceBar> {
+    pub fn compute_h0(&self, n_points: usize, edges: &[SimplexEdge]) -> Vec<PersistenceBar> {
         // Union-Find for connected components
         let mut parent: Vec<usize> = (0..n_points).collect();
         let birth: Vec<f64> = vec![0.0; n_points];
@@ -213,8 +206,11 @@ impl SparseRipsComplex {
 
         // Sort edges by weight (filtration order)
         let mut sorted_edges: Vec<&SimplexEdge> = edges.iter().collect();
-        sorted_edges
-            .sort_unstable_by(|a, b| a.weight.partial_cmp(&b.weight).unwrap_or(std::cmp::Ordering::Equal));
+        sorted_edges.sort_unstable_by(|a, b| {
+            a.weight
+                .partial_cmp(&b.weight)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         for edge in sorted_edges {
             let pu = find(&mut parent, edge.u as usize);
@@ -240,8 +236,7 @@ impl SparseRipsComplex {
 
         // H1 (loops): identify edges that create cycles in the sparse complex
         // Approximate: count edges above spanning tree count
-        let h1_count =
-            edges.len().saturating_sub(points.len().saturating_sub(1));
+        let h1_count = edges.len().saturating_sub(points.len().saturating_sub(1));
         let h1_bars: Vec<PersistenceBar> = edges
             .iter()
             .take(h1_count)
@@ -309,8 +304,7 @@ mod tests {
     #[test]
     fn test_sparse_rips_on_line() {
         let rips = SparseRipsComplex::new(0.1, 2.0);
-        let points: Vec<Vec<f64>> =
-            (0..10).map(|i| vec![i as f64 * 0.3]).collect();
+        let points: Vec<Vec<f64>> = (0..10).map(|i| vec![i as f64 * 0.3]).collect();
         let edges = rips.sparse_1_skeleton(&points);
         assert!(!edges.is_empty(), "Nearby points should form edges");
     }
@@ -319,12 +313,14 @@ mod tests {
     fn test_h0_detects_components() {
         let rips = SparseRipsComplex::new(0.05, 1.0);
         // Two clusters far apart
-        let mut points: Vec<Vec<f64>> =
-            (0..5).map(|i| vec![i as f64 * 0.1]).collect();
+        let mut points: Vec<Vec<f64>> = (0..5).map(|i| vec![i as f64 * 0.1]).collect();
         points.extend((0..5).map(|i| vec![10.0 + i as f64 * 0.1]));
         let diagram = rips.compute(&points);
         // Should detect long-lived H0 bar from inter-cluster gap
-        assert!(!diagram.h0.is_empty(), "Should find connected component bars");
+        assert!(
+            !diagram.h0.is_empty(),
+            "Should find connected component bars"
+        );
     }
 
     #[test]

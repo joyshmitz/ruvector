@@ -64,7 +64,10 @@ pub struct SparseRipsComplex {
 
 impl SparseRipsComplex {
     pub fn new(epsilon: f64, max_radius: f64) -> Self {
-        Self { epsilon, max_radius }
+        Self {
+            epsilon,
+            max_radius,
+        }
     }
 
     /// Build sparse 1-skeleton using approximate neighborhood selection
@@ -93,11 +96,7 @@ impl SparseRipsComplex {
     }
 
     /// Compute H0 persistence via Union-Find on filtration
-    fn compute_h0(
-        &self,
-        n_points: usize,
-        edges: &[SimplexEdge],
-    ) -> Vec<PersistenceBar> {
+    fn compute_h0(&self, n_points: usize, edges: &[SimplexEdge]) -> Vec<PersistenceBar> {
         let mut parent: Vec<usize> = (0..n_points).collect();
         let birth = vec![0.0f64; n_points];
         let mut bars = Vec::new();
@@ -110,8 +109,7 @@ impl SparseRipsComplex {
         }
 
         let mut sorted_edges: Vec<&SimplexEdge> = edges.iter().collect();
-        sorted_edges
-            .sort_unstable_by(|a, b| a.weight.partial_cmp(&b.weight).unwrap());
+        sorted_edges.sort_unstable_by(|a, b| a.weight.partial_cmp(&b.weight).unwrap());
 
         for edge in sorted_edges {
             let pu = find(&mut parent, edge.u as usize);
@@ -157,8 +155,7 @@ pub fn run_sparse_tda_demo(n_points: usize) -> PersistenceDiagram {
     let rips = SparseRipsComplex::new(0.05, 2.0);
     let points: Vec<Vec<f64>> = (0..n_points)
         .map(|i| {
-            let angle =
-                (i as f64 / n_points as f64) * 2.0 * std::f64::consts::PI;
+            let angle = (i as f64 / n_points as f64) * 2.0 * std::f64::consts::PI;
             vec![angle.cos(), angle.sin()]
         })
         .collect();
@@ -180,8 +177,7 @@ mod tests {
     fn test_two_clusters_detected() {
         let rips = SparseRipsComplex::new(0.05, 1.0);
         // Two well-separated clusters
-        let mut points: Vec<Vec<f64>> =
-            (0..5).map(|i| vec![i as f64 * 0.1, 0.0]).collect();
+        let mut points: Vec<Vec<f64>> = (0..5).map(|i| vec![i as f64 * 0.1, 0.0]).collect();
         points.extend((0..5).map(|i| vec![10.0 + i as f64 * 0.1, 0.0]));
         let diagram = rips.compute(&points);
         assert!(!diagram.h0.is_empty(), "Should find H0 bars for clusters");
@@ -196,8 +192,7 @@ mod tests {
     #[test]
     fn test_sparse_rips_line_has_edges() {
         let rips = SparseRipsComplex::new(0.1, 2.0);
-        let points: Vec<Vec<f64>> =
-            (0..10).map(|i| vec![i as f64 * 0.2]).collect();
+        let points: Vec<Vec<f64>> = (0..10).map(|i| vec![i as f64 * 0.2]).collect();
         let edges = rips.sparse_1_skeleton(&points);
         assert!(!edges.is_empty(), "Nearby points should form edges");
     }

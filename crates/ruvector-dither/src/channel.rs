@@ -22,7 +22,11 @@ impl ChannelDither {
         let channels = (0..n_channels)
             .map(|ch| GoldenRatioDither::from_ids(layer_id, ch as u32))
             .collect();
-        Self { channels, bits, eps }
+        Self {
+            channels,
+            bits,
+            eps,
+        }
     }
 
     /// Quantize `activations` in-place.  Each column (channel dimension) uses
@@ -32,7 +36,10 @@ impl ChannelDither {
     /// If the slice is not a multiple of `n_channels`, the remainder is
     /// processed using channel 0.
     pub fn quantize_batch(&mut self, activations: &mut [f32]) {
-        assert!(!self.channels.is_empty(), "ChannelDither must have >= 1 channel");
+        assert!(
+            !self.channels.is_empty(),
+            "ChannelDither must have >= 1 channel"
+        );
         assert!(self.bits >= 2 && self.bits <= 31, "bits must be in [2, 31]");
         let nc = self.channels.len();
         let qmax = ((1u32 << (self.bits - 1)) - 1) as f32;
@@ -77,6 +84,9 @@ mod tests {
         let mut buf1 = input.clone();
         ChannelDither::new(0, 8, 8, 0.5).quantize_batch(&mut buf0);
         ChannelDither::new(99, 8, 8, 0.5).quantize_batch(&mut buf1);
-        assert_ne!(buf0, buf1, "different layer_ids must yield different dithered outputs");
+        assert_ne!(
+            buf0, buf1,
+            "different layer_ids must yield different dithered outputs"
+        );
     }
 }

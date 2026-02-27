@@ -31,7 +31,10 @@ pub struct DecoherenceParams {
 impl Default for DecoherenceParams {
     fn default() -> Self {
         // Typical superconducting qubit parameters, scaled to cognitive timescales
-        Self { t1_ms: 100.0, t2_ms: 50.0 }
+        Self {
+            t1_ms: 100.0,
+            t2_ms: 50.0,
+        }
     }
 }
 
@@ -51,9 +54,7 @@ impl InterferenceState {
         // Initialize in equal superposition |+⟩^n
         let n_states = 1usize << n_qubits.min(8); // Cap at 8 qubits for memory
         let amp = 1.0 / (n_states as f64).sqrt();
-        let amplitudes = (0..n_states as u64)
-            .map(|i| (i, amp, 0.0))
-            .collect();
+        let amplitudes = (0..n_states as u64).map(|i| (i, amp, 0.0)).collect();
         Self {
             n_qubits: n_qubits.min(8),
             amplitudes,
@@ -75,7 +76,9 @@ impl InterferenceState {
 
     /// Compute coherence (purity measure: Tr(ρ²))
     fn purity(&self) -> f64 {
-        let norm_sq: f64 = self.amplitudes.iter()
+        let norm_sq: f64 = self
+            .amplitudes
+            .iter()
             .map(|(_, re, im)| re * re + im * im)
             .sum();
         norm_sq
@@ -93,10 +96,16 @@ impl InterferenceState {
             *im = phase.sin() * magnitude;
         }
         // Renormalize
-        let norm = self.amplitudes.iter().map(|(_, r, i)| r*r + i*i).sum::<f64>().sqrt();
+        let norm = self
+            .amplitudes
+            .iter()
+            .map(|(_, r, i)| r * r + i * i)
+            .sum::<f64>()
+            .sqrt();
         if norm > 1e-10 {
             for (_, re, im) in self.amplitudes.iter_mut() {
-                *re /= norm; *im /= norm;
+                *re /= norm;
+                *im /= norm;
             }
         }
     }
@@ -104,7 +113,9 @@ impl InterferenceState {
     /// Measure: collapse to basis states, return top-k by probability.
     #[allow(dead_code)]
     fn measure_top_k(&self, k: usize) -> Vec<QuantumMeasurement> {
-        let mut measurements: Vec<QuantumMeasurement> = self.amplitudes.iter()
+        let mut measurements: Vec<QuantumMeasurement> = self
+            .amplitudes
+            .iter()
             .map(|&(basis_state, re, im)| QuantumMeasurement {
                 basis_state,
                 probability: re * re + im * im,
@@ -112,7 +123,11 @@ impl InterferenceState {
                 amplitude_im: im,
             })
             .collect();
-        measurements.sort_unstable_by(|a, b| b.probability.partial_cmp(&a.probability).unwrap_or(std::cmp::Ordering::Equal));
+        measurements.sort_unstable_by(|a, b| {
+            b.probability
+                .partial_cmp(&a.probability)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         measurements.truncate(k);
         measurements
     }
@@ -149,7 +164,9 @@ impl QuantumStubBackend {
         }
     }
 
-    pub fn purity(&self) -> f64 { self.state.purity() }
+    pub fn purity(&self) -> f64 {
+        self.state.purity()
+    }
 
     pub fn store(&mut self, pattern: &[f32]) -> u64 {
         let id = self.next_id;
@@ -162,25 +179,39 @@ impl QuantumStubBackend {
 }
 
 impl SubstrateBackend for QuantumStubBackend {
-    fn name(&self) -> &'static str { "quantum-interference-stub" }
+    fn name(&self) -> &'static str {
+        "quantum-interference-stub"
+    }
 
     fn similarity_search(&self, query: &[f32], k: usize) -> Vec<SearchResult> {
         let t0 = Instant::now();
         // Classical interference: inner product weighted by quantum amplitudes
-        let mut results: Vec<SearchResult> = self.stored_patterns.iter()
+        let mut results: Vec<SearchResult> = self
+            .stored_patterns
+            .iter()
             .map(|(id, pattern)| {
                 // Score = |⟨ψ|query⟩|² weighted by pattern norm
-                let inner: f32 = pattern.iter().zip(query.iter())
+                let inner: f32 = pattern
+                    .iter()
+                    .zip(query.iter())
                     .map(|(a, b)| a * b)
                     .sum::<f32>();
                 let norm_p = pattern.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-8);
                 let norm_q = query.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-8);
                 // Amplitude-weighted cosine similarity
                 let score = (inner / (norm_p * norm_q)) * self.state.purity() as f32;
-                SearchResult { id: *id, score: score.max(0.0), embedding: pattern.clone() }
+                SearchResult {
+                    id: *id,
+                    score: score.max(0.0),
+                    embedding: pattern.clone(),
+                }
             })
             .collect();
-        results.sort_unstable_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_unstable_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(k);
         let _elapsed = t0.elapsed();
         results
@@ -201,7 +232,9 @@ impl SubstrateBackend for QuantumStubBackend {
         }
     }
 
-    fn coherence(&self) -> f32 { self.state.purity() as f32 }
+    fn coherence(&self) -> f32 {
+        self.state.purity() as f32
+    }
 
     fn reset(&mut self) {
         self.state = InterferenceState::new(self.n_qubits);
@@ -218,7 +251,10 @@ mod tests {
     fn test_quantum_state_initialized() {
         let backend = QuantumStubBackend::new(4);
         // Initial purity of pure equal superposition = 1.0
-        assert!((backend.purity() - 1.0).abs() < 1e-6, "Initial state should be pure");
+        assert!(
+            (backend.purity() - 1.0).abs() < 1e-6,
+            "Initial state should be pure"
+        );
     }
 
     #[test]
@@ -232,7 +268,10 @@ mod tests {
             backend.state.decohere(2.0);
         }
         // Purity should have decreased due to T1/T2 decay
-        assert!(backend.purity() < initial_purity, "Decoherence should reduce purity");
+        assert!(
+            backend.purity() < initial_purity,
+            "Decoherence should reduce purity"
+        );
     }
 
     #[test]
@@ -255,6 +294,9 @@ mod tests {
         let vec = vec![0.5f32; 8];
         state.embed_vector(&vec);
         // After embedding, state should remain normalized (purity ≤ 1)
-        assert!(state.purity() <= 1.0 + 1e-6, "Quantum state must remain normalized");
+        assert!(
+            state.purity() <= 1.0 + 1e-6,
+            "Quantum state must remain normalized"
+        );
     }
 }

@@ -46,7 +46,7 @@ impl NeuromorphicExperiment {
         let config = NeuromorphicConfig {
             hd_dim: 10_000,
             n_neurons: 500,
-            k_wta: 25,  // 5% sparsity
+            k_wta: 25, // 5% sparsity
             tau_m: 20.0,
             btsp_threshold: 0.6,
             kuramoto_k: 0.5,
@@ -85,12 +85,15 @@ impl NeuromorphicExperiment {
         let mut retrieved = 0usize;
         for pattern in &self.patterns {
             // Add 10% noise to query
-            let noisy_query: Vec<f32> = pattern.iter()
+            let noisy_query: Vec<f32> = pattern
+                .iter()
                 .map(|&v| v + (v * 0.1 * (rand_f32() - 0.5)))
                 .collect();
             let results = self.backend.similarity_search(&noisy_query, 1);
             if let Some(r) = results.first() {
-                if r.score > 0.5 { retrieved += 1; }
+                if r.score > 0.5 {
+                    retrieved += 1;
+                }
             }
         }
 
@@ -140,7 +143,9 @@ impl NeuromorphicExperiment {
 }
 
 impl Default for NeuromorphicExperiment {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Simple deterministic pseudo-random f32 in [0,1) for reproducibility
@@ -175,9 +180,14 @@ mod tests {
         exp.n_cycles = 200; // More cycles → better synchronization
         exp.load_patterns(vec![vec![0.5f32; 32]]);
         let result = exp.run();
-        let gamma = result.emergent_properties.iter()
+        let gamma = result
+            .emergent_properties
+            .iter()
             .find(|e| e.name == "Gamma Synchronization")
             .expect("Gamma synchronization should be measured");
-        assert!(gamma.measured_value > 0.0, "Kuramoto order parameter should be nonzero");
+        assert!(
+            gamma.measured_value > 0.0,
+            "Kuramoto order parameter should be nonzero"
+        );
     }
 }

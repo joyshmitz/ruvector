@@ -38,7 +38,9 @@ impl PatternDecoherence {
         let t1 = Duration::from_millis((60_000.0 * phi_factor) as u64);
         let t2 = Duration::from_millis((30_000.0 * phi_factor) as u64);
         Self {
-            id, t1, t2,
+            id,
+            t1,
+            t2,
             created_at: now,
             last_retrieved: now,
             phi,
@@ -52,7 +54,7 @@ impl PatternDecoherence {
         self.retrieval_count += 1;
         // Hebbian refreshing: each retrieval extends T2 by 10%
         self.t2 = Duration::from_millis(
-            (self.t2.as_millis() as f64 * 1.1).min(self.t1.as_millis() as f64) as u64
+            (self.t2.as_millis() as f64 * 1.1).min(self.t1.as_millis() as f64) as u64,
         );
     }
 
@@ -117,7 +119,8 @@ impl QuantumDecayPool {
 
     /// Get decoherence-weighted score for search results.
     pub fn weighted_score(&self, id: u64, base_score: f64) -> f64 {
-        self.patterns.iter()
+        self.patterns
+            .iter()
             .find(|p| p.id == id)
             .map(|p| base_score * (0.3 + 0.7 * p.decoherence_score()))
             .unwrap_or(base_score * 0.5) // Unknown patterns get 50% weight
@@ -133,28 +136,47 @@ impl QuantumDecayPool {
 
     /// Evict the weakest pattern (lowest decoherence score).
     fn evict_weakest(&mut self) {
-        if let Some(idx) = self.patterns.iter()
+        if let Some(idx) = self
+            .patterns
+            .iter()
             .enumerate()
-            .min_by(|a, b| a.1.decoherence_score().partial_cmp(&b.1.decoherence_score()).unwrap_or(std::cmp::Ordering::Equal))
+            .min_by(|a, b| {
+                a.1.decoherence_score()
+                    .partial_cmp(&b.1.decoherence_score())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|(i, _)| i)
         {
             self.patterns.remove(idx);
         }
     }
 
-    pub fn len(&self) -> usize { self.patterns.len() }
-    pub fn is_empty(&self) -> bool { self.patterns.is_empty() }
+    pub fn len(&self) -> usize {
+        self.patterns.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.patterns.is_empty()
+    }
 
     /// Statistics for monitoring
     pub fn stats(&self) -> DecayPoolStats {
         if self.patterns.is_empty() {
             return DecayPoolStats::default();
         }
-        let scores: Vec<f64> = self.patterns.iter().map(|p| p.decoherence_score()).collect();
+        let scores: Vec<f64> = self
+            .patterns
+            .iter()
+            .map(|p| p.decoherence_score())
+            .collect();
         let mean = scores.iter().sum::<f64>() / scores.len() as f64;
         let min = scores.iter().cloned().fold(f64::INFINITY, f64::min);
         let max = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        DecayPoolStats { count: self.patterns.len(), mean_score: mean, min_score: min, max_score: max }
+        DecayPoolStats {
+            count: self.patterns.len(),
+            mean_score: mean,
+            min_score: min,
+            max_score: max,
+        }
     }
 }
 
@@ -182,7 +204,10 @@ mod tests {
     #[test]
     fn test_t2_less_than_t1() {
         let pattern = PatternDecoherence::new(0, 1.0);
-        assert!(pattern.t2 <= pattern.t1, "T2 must never exceed T1 (physical constraint)");
+        assert!(
+            pattern.t2 <= pattern.t1,
+            "T2 must never exceed T1 (physical constraint)"
+        );
     }
 
     #[test]
@@ -207,7 +232,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(5));
         let evicted = pool.evict_decoherent();
         assert!(evicted > 0, "Fast-decoherent pattern should be evicted");
-        assert!(pool.patterns.iter().any(|p| p.id == 1), "High-Φ pattern should survive");
+        assert!(
+            pool.patterns.iter().any(|p| p.id == 1),
+            "High-Φ pattern should survive"
+        );
     }
 
     #[test]
@@ -216,6 +244,9 @@ mod tests {
         pool.register(5, 2.0);
         let weighted = pool.weighted_score(5, 1.0);
         // Should be between 0.3 and 1.0 (decoherence_score is in [0,1])
-        assert!(weighted > 0.0 && weighted <= 1.0, "Weighted score should be in (0,1]");
+        assert!(
+            weighted > 0.0 && weighted <= 1.0,
+            "Weighted score should be in (0,1]"
+        );
     }
 }

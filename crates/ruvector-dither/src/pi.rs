@@ -52,8 +52,12 @@ impl PiDither {
     #[inline]
     pub fn from_tensor_id(tensor_id: u32) -> Self {
         // Mix bits so different tensor IDs get distinct offsets
-        let mixed = tensor_id.wrapping_mul(0x9E37_79B9).wrapping_add(tensor_id >> 16);
-        Self { idx: (mixed & 0xFF) as u8 }
+        let mixed = tensor_id
+            .wrapping_mul(0x9E37_79B9)
+            .wrapping_add(tensor_id >> 16);
+        Self {
+            idx: (mixed & 0xFF) as u8,
+        }
     }
 }
 

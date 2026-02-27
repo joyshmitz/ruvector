@@ -36,8 +36,8 @@ impl Default for NeuromorphicConfig {
         Self {
             hd_dim: 10_000,
             n_neurons: 1_000,
-            k_wta: 50,        // 5% sparsity
-            tau_m: 20.0,      // 20ms membrane time constant
+            k_wta: 50,   // 5% sparsity
+            tau_m: 20.0, // 20ms membrane time constant
             btsp_threshold: 0.7,
             kuramoto_k: 0.3,
             oscillation_hz: 40.0, // Gamma band
@@ -74,9 +74,7 @@ impl NeuromorphicState {
         use std::f32::consts::PI;
         let n = cfg.n_neurons;
         // Initialize Kuramoto phases uniformly in [0, 2π)
-        let phases: Vec<f32> = (0..n)
-            .map(|i| 2.0 * PI * i as f32 / n as f32)
-            .collect();
+        let phases: Vec<f32> = (0..n).map(|i| 2.0 * PI * i as f32 / n as f32).collect();
         Self {
             hd_memory: Vec::new(),
             hd_dim: cfg.hd_dim,
@@ -99,7 +97,9 @@ impl NeuromorphicState {
         // Pseudo-random projection via LCG seeded per dimension
         let mut seed = 0x9e3779b97f4a7c15u64;
         for (i, &v) in vec.iter().enumerate() {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let proj_seed = seed ^ (i as u64).wrapping_mul(0x517cc1b727220a95);
             // Project onto random hyperplane
             let bit_idx = (proj_seed as usize) % self.hd_dim;
@@ -114,7 +114,9 @@ impl NeuromorphicState {
     /// HDC similarity: Hamming distance normalized to [0,1].
     fn hd_similarity(&self, a: &[u8], b: &[u8]) -> f32 {
         let n_bits = self.hd_dim as f32;
-        let hamming: u32 = a.iter().zip(b.iter())
+        let hamming: u32 = a
+            .iter()
+            .zip(b.iter())
             .map(|(x, y)| (x ^ y).count_ones())
             .sum();
         1.0 - (hamming as f32 / n_bits)
@@ -130,10 +132,7 @@ impl NeuromorphicState {
             return;
         }
         // Partial select: pivot the k-th largest to index k-1, O(n) average
-        let mut indexed: Vec<(usize, f32)> = self.membrane.iter()
-            .copied()
-            .enumerate()
-            .collect();
+        let mut indexed: Vec<(usize, f32)> = self.membrane.iter().copied().enumerate().collect();
         // select_nth_unstable_by puts kth element in correct position
         indexed.select_nth_unstable_by(k - 1, |a, b| {
             b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
@@ -192,12 +191,22 @@ impl NeuromorphicBackend {
     pub fn new() -> Self {
         let cfg = NeuromorphicConfig::default();
         let state = NeuromorphicState::new(&cfg);
-        Self { config: cfg, state, pattern_ids: Vec::new(), next_id: 0 }
+        Self {
+            config: cfg,
+            state,
+            pattern_ids: Vec::new(),
+            next_id: 0,
+        }
     }
 
     pub fn with_config(cfg: NeuromorphicConfig) -> Self {
         let state = NeuromorphicState::new(&cfg);
-        Self { config: cfg, state, pattern_ids: Vec::new(), next_id: 0 }
+        Self {
+            config: cfg,
+            state,
+            pattern_ids: Vec::new(),
+            next_id: 0,
+        }
     }
 
     /// Store a pattern as HDC hypervector.
@@ -230,7 +239,7 @@ impl NeuromorphicBackend {
             if self.state.membrane[i] >= 1.0 {
                 spikes[i] = true;
                 self.state.membrane[i] = 0.0; // reset
-                // Update STDP post-trace
+                                              // Update STDP post-trace
                 self.state.post_trace[i] = (self.state.post_trace[i] + 1.0) * 0.95;
                 // Eligibility trace (E-prop)
                 self.state.eligibility[i] += 0.1;
@@ -244,23 +253,38 @@ impl NeuromorphicBackend {
 }
 
 impl Default for NeuromorphicBackend {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SubstrateBackend for NeuromorphicBackend {
-    fn name(&self) -> &'static str { "neuromorphic-hdc-lif" }
+    fn name(&self) -> &'static str {
+        "neuromorphic-hdc-lif"
+    }
 
     fn similarity_search(&self, query: &[f32], k: usize) -> Vec<SearchResult> {
         let t0 = Instant::now();
         let query_hv = self.state.hd_encode(query);
-        let mut results: Vec<SearchResult> = self.state.hd_memory.iter()
+        let mut results: Vec<SearchResult> = self
+            .state
+            .hd_memory
+            .iter()
             .zip(self.pattern_ids.iter())
             .map(|(hv, &id)| {
                 let score = self.state.hd_similarity(&query_hv, hv);
-                SearchResult { id, score, embedding: vec![] }
+                SearchResult {
+                    id,
+                    score,
+                    embedding: vec![],
+                }
             })
             .collect();
-        results.sort_unstable_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_unstable_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(k);
         let _elapsed = t0.elapsed();
         results
@@ -278,7 +302,11 @@ impl SubstrateBackend for NeuromorphicBackend {
         }
         let delta_norm = pattern.iter().map(|x| x * x).sum::<f32>().sqrt() * reward.abs();
         let latency_us = t0.elapsed().as_micros() as u64;
-        AdaptResult { delta_norm, mode: "btsp-eprop", latency_us }
+        AdaptResult {
+            delta_norm,
+            mode: "btsp-eprop",
+            latency_us,
+        }
     }
 
     fn coherence(&self) -> f32 {
@@ -325,8 +353,10 @@ mod tests {
         for _ in 0..500 {
             backend.circadian_coherence();
         }
-        assert!(backend.state.order_parameter > 0.5,
-            "Strong Kuramoto coupling should achieve synchronization (R > 0.5)");
+        assert!(
+            backend.state.order_parameter > 0.5,
+            "Strong Kuramoto coupling should achieve synchronization (R > 0.5)"
+        );
     }
 
     #[test]
@@ -336,7 +366,9 @@ mod tests {
         let mut spiked = false;
         for _ in 0..20 {
             let spikes = backend.lif_tick(&strong_input);
-            if spikes.iter().any(|&s| s) { spiked = true; }
+            if spikes.iter().any(|&s| s) {
+                spiked = true;
+            }
         }
         assert!(spiked, "Strong input should cause LIF spikes");
     }

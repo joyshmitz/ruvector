@@ -53,9 +53,7 @@ impl SoftSpinMotif {
     pub fn random(n: usize, a: f32, b: f32, seed: u64) -> Self {
         use rand::{Rng, SeedableRng};
         let mut rng = rand::rngs::SmallRng::seed_from_u64(seed);
-        let j: Vec<f32> = (0..n * n)
-            .map(|_| rng.gen_range(-0.5_f32..0.5))
-            .collect();
+        let j: Vec<f32> = (0..n * n).map(|_| rng.gen_range(-0.5_f32..0.5)).collect();
         // Symmetrise
         let mut j_sym = vec![0.0_f32; n * n];
         for i in 0..n {
@@ -66,7 +64,14 @@ impl SoftSpinMotif {
         let x: Vec<f32> = (0..n).map(|_| rng.gen_range(-0.1_f32..0.1)).collect();
         Self {
             state: State::from_vec(x),
-            model: SoftSpin::new(Couplings { j: j_sym, h: vec![0.0; n] }, a, b),
+            model: SoftSpin::new(
+                Couplings {
+                    j: j_sym,
+                    h: vec![0.0; n],
+                },
+                a,
+                b,
+            ),
         }
     }
 }

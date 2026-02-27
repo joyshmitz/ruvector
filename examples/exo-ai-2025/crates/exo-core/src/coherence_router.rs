@@ -58,9 +58,18 @@ impl ActionContext {
         }
     }
 
-    pub fn irreversible(mut self) -> Self { self.reversible = false; self }
-    pub fn shared(mut self) -> Self { self.affects_shared_state = true; self }
-    pub fn cost(mut self, c: f32) -> Self { self.compute_cost = c.clamp(0.0, 1.0); self }
+    pub fn irreversible(mut self) -> Self {
+        self.reversible = false;
+        self
+    }
+    pub fn shared(mut self) -> Self {
+        self.affects_shared_state = true;
+        self
+    }
+    pub fn cost(mut self, c: f32) -> Self {
+        self.compute_cost = c.clamp(0.0, 1.0);
+        self
+    }
 }
 
 /// Gate decision with supporting metrics.
@@ -75,7 +84,9 @@ pub struct GateDecision {
 }
 
 impl GateDecision {
-    pub fn is_permit(&self) -> bool { self.decision == WitnessDecision::Permit }
+    pub fn is_permit(&self) -> bool {
+        self.decision == WitnessDecision::Permit
+    }
 }
 
 /// Trait for coherence backend implementations.
@@ -120,11 +131,15 @@ impl SheafLaplacianBackend {
 }
 
 impl Default for SheafLaplacianBackend {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CoherenceBackendImpl for SheafLaplacianBackend {
-    fn name(&self) -> &'static str { "sheaf-laplacian" }
+    fn name(&self) -> &'static str {
+        "sheaf-laplacian"
+    }
 
     fn gate(&self, ctx: &ActionContext) -> GateDecision {
         let t0 = Instant::now();
@@ -153,7 +168,9 @@ impl CoherenceBackendImpl for SheafLaplacianBackend {
 pub struct FastPathBackend;
 
 impl CoherenceBackendImpl for FastPathBackend {
-    fn name(&self) -> &'static str { "fast-path" }
+    fn name(&self) -> &'static str {
+        "fast-path"
+    }
     fn gate(&self, _ctx: &ActionContext) -> GateDecision {
         GateDecision {
             decision: WitnessDecision::Permit,
@@ -189,26 +206,35 @@ impl CoherenceRouter {
 
     /// Register an optional backend.
     pub fn with_quantum(mut self, backend: Box<dyn CoherenceBackendImpl>) -> Self {
-        self.quantum = Some(backend); self
+        self.quantum = Some(backend);
+        self
     }
     pub fn with_distributed(mut self, backend: Box<dyn CoherenceBackendImpl>) -> Self {
-        self.distributed = Some(backend); self
+        self.distributed = Some(backend);
+        self
     }
     pub fn with_circadian(mut self, backend: Box<dyn CoherenceBackendImpl>) -> Self {
-        self.circadian = Some(backend); self
+        self.circadian = Some(backend);
+        self
     }
 
     /// Gate an action using the specified backend.
     pub fn gate(&self, ctx: &ActionContext, backend: CoherenceBackend) -> GateDecision {
         match backend {
             CoherenceBackend::SheafLaplacian => self.sheaf.gate(ctx),
-            CoherenceBackend::Quantum => self.quantum.as_ref()
+            CoherenceBackend::Quantum => self
+                .quantum
+                .as_ref()
                 .map(|b| b.gate(ctx))
                 .unwrap_or_else(|| self.sheaf.gate(ctx)),
-            CoherenceBackend::Distributed => self.distributed.as_ref()
+            CoherenceBackend::Distributed => self
+                .distributed
+                .as_ref()
                 .map(|b| b.gate(ctx))
                 .unwrap_or_else(|| self.sheaf.gate(ctx)),
-            CoherenceBackend::Circadian => self.circadian.as_ref()
+            CoherenceBackend::Circadian => self
+                .circadian
+                .as_ref()
                 .map(|b| b.gate(ctx))
                 .unwrap_or_else(|| self.sheaf.gate(ctx)),
             CoherenceBackend::FastPath => self.fast_path.gate(ctx),
@@ -262,7 +288,9 @@ impl CoherenceRouter {
 }
 
 impl Default for CoherenceRouter {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -303,7 +331,8 @@ mod tests {
     fn test_gate_with_witness() {
         let router = CoherenceRouter::new();
         let ctx = ActionContext::new("moderate op").cost(0.5);
-        let (decision, witness) = router.gate_with_witness(&ctx, CoherenceBackend::SheafLaplacian, 42);
+        let (decision, witness) =
+            router.gate_with_witness(&ctx, CoherenceBackend::SheafLaplacian, 42);
         assert_eq!(decision.decision, witness.decision);
         assert!(witness.lambda_min_cut.is_some());
         assert_eq!(witness.sequence, 42);
@@ -317,7 +346,10 @@ mod tests {
         // π⁻¹ × φ ≈ 0.5150... — verify not representable as k/2^n for small n
         // The mantissa should not be exactly representable in 3/5/7 bits
         let mantissa_3bit = (scale * 8.0).floor() / 8.0;
-        assert!((scale - mantissa_3bit).abs() > 1e-6, "Should not align with 3-bit grid");
+        assert!(
+            (scale - mantissa_3bit).abs() > 1e-6,
+            "Should not align with 3-bit grid"
+        );
     }
 
     #[test]
@@ -325,6 +357,10 @@ mod tests {
         let router = CoherenceRouter::new();
         let ctx = ActionContext::new("latency test").cost(0.5);
         let d = router.gate(&ctx, CoherenceBackend::SheafLaplacian);
-        assert!(d.latency_us < 1000, "Gate should complete in <1ms, got {}µs", d.latency_us);
+        assert!(
+            d.latency_us < 1000,
+            "Gate should complete in <1ms, got {}µs",
+            d.latency_us
+        );
     }
 }

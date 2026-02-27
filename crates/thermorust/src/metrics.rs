@@ -43,7 +43,13 @@ pub fn binary_entropy(s: &State) -> f32 {
     }
     let p_up = s.x.iter().filter(|&&xi| xi > 0.0).count() as f32 / n as f32;
     let p_dn = 1.0 - p_up;
-    let h = |p: f32| if p <= 0.0 || p >= 1.0 { 0.0 } else { -p * p.ln() - (1.0 - p) * (1.0 - p).ln() };
+    let h = |p: f32| {
+        if p <= 0.0 || p >= 1.0 {
+            0.0
+        } else {
+            -p * p.ln() - (1.0 - p) * (1.0 - p).ln()
+        }
+    };
     n as f32 * h(p_up) * 0.5 + n as f32 * h(p_dn) * 0.5
 }
 

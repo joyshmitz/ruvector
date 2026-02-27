@@ -108,13 +108,9 @@ impl ExoTransferOrchestrator {
                 data: serde_json::json!({ "arm": &arm.0 }),
             };
 
-            let eval = self.engine.evaluate_and_record(
-                &self.src_id,
-                task,
-                &solution,
-                bucket.clone(),
-                arm,
-            );
+            let eval =
+                self.engine
+                    .evaluate_and_record(&self.src_id, task, &solution, bucket.clone(), arm);
             eval.score
         } else {
             0.5f32
@@ -131,12 +127,9 @@ impl ExoTransferOrchestrator {
         let manifold_entries = self.manifold.len();
 
         // ── Phase 3: Transfer Timeline ─────────────────────────────────────────
-        let _ = self.timeline.record_transfer(
-            &self.src_id,
-            &self.dst_id,
-            self.cycle,
-            eval_score,
-        );
+        let _ = self
+            .timeline
+            .record_transfer(&self.src_id, &self.dst_id, self.cycle, eval_score);
 
         // ── Phase 4: Transfer CRDT ─────────────────────────────────────────────
         self.crdt.publish_prior(
@@ -284,12 +277,18 @@ mod tests {
         let bytes = orchestrator.package_as_rvf();
 
         // Must be 64-byte aligned and contain at least one segment.
-        assert!(!bytes.is_empty(), "RVF output must not be empty after cycles");
+        assert!(
+            !bytes.is_empty(),
+            "RVF output must not be empty after cycles"
+        );
         assert_eq!(bytes.len() % 64, 0, "RVF output must be 64-byte aligned");
 
         // Verify the first segment's magic bytes.
         let magic = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-        assert_eq!(magic, SEGMENT_MAGIC, "First segment must have valid RVF magic");
+        assert_eq!(
+            magic, SEGMENT_MAGIC,
+            "First segment must have valid RVF magic"
+        );
     }
 
     #[test]
@@ -298,7 +297,9 @@ mod tests {
         orchestrator.run_cycle();
 
         let path = std::env::temp_dir().join("exo_test.rvf");
-        orchestrator.save_rvf(&path).expect("save_rvf should succeed");
+        orchestrator
+            .save_rvf(&path)
+            .expect("save_rvf should succeed");
 
         let written = std::fs::read(&path).expect("file should exist after save_rvf");
         assert!(!written.is_empty());

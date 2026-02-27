@@ -48,7 +48,7 @@ fn build_embedding(src: &DomainId, dst: &DomainId, prior: &TransferPrior, cycle:
         let bp = prior.get_prior(&bucket, &arm_id);
         let off = 32 + i * 4;
         if off + 3 < DIM {
-            emb[off]     = bp.mean().clamp(0.0, 1.0);
+            emb[off] = bp.mean().clamp(0.0, 1.0);
             emb[off + 1] = bp.variance().clamp(0.0, 0.25) * 4.0;
             emb[off + 2] = (1.0 - bp.variance().clamp(0.0, 0.25) * 4.0).max(0.0);
             emb[off + 3] = 0.0; // reserved

@@ -39,7 +39,7 @@ pub mod noise;
 pub mod state;
 
 // Re-export the most commonly used items at the crate root.
-pub use dynamics::{Params, step_discrete, step_continuous, anneal_discrete, anneal_continuous};
+pub use dynamics::{anneal_continuous, anneal_discrete, step_continuous, step_discrete, Params};
 pub use energy::{Couplings, EnergyModel, Ising, SoftSpin};
 pub use metrics::{magnetisation, overlap, Trace};
 pub use state::State;

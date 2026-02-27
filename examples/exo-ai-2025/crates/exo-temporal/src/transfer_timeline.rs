@@ -6,7 +6,9 @@
 
 use ruvector_domain_expansion::DomainId;
 
-use crate::{AnticipationHint, ConsolidationConfig, ConsolidationResult, TemporalConfig, TemporalMemory};
+use crate::{
+    AnticipationHint, ConsolidationConfig, ConsolidationResult, TemporalConfig, TemporalMemory,
+};
 use exo_core::{Metadata, Pattern, PatternId, SubstrateTime};
 
 const DIM: usize = 64;

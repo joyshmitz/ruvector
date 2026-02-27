@@ -26,7 +26,9 @@ impl GoldenRatioDither {
     /// `frac(layer_id × φ + channel_id × φ²)`.
     #[inline]
     pub fn new(initial_state: f32) -> Self {
-        Self { state: initial_state.abs().fract() }
+        Self {
+            state: initial_state.abs().fract(),
+        }
     }
 
     /// Construct from a `(layer_id, channel_id)` pair for structural decorrelation.
@@ -81,7 +83,10 @@ mod tests {
         // Confirm they start at different states
         let v0 = d0.next_unit();
         let v1 = d1.next_unit();
-        assert!((v0 - v1).abs() > 1e-4, "distinct seeds should produce distinct first values");
+        assert!(
+            (v0 - v1).abs() > 1e-4,
+            "distinct seeds should produce distinct first values"
+        );
     }
 
     #[test]

@@ -104,7 +104,10 @@ mod tests {
             codes_with.push(quantize_to_code(x, bits, 0.5, &mut d));
         }
         let unique: std::collections::HashSet<i32> = codes_with.iter().copied().collect();
-        assert!(unique.len() > 1, "dithered signal must produce >1 unique code");
+        assert!(
+            unique.len() > 1,
+            "dithered signal must produce >1 unique code"
+        );
     }
 
     #[test]

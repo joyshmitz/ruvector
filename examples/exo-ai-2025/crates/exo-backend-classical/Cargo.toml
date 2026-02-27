@@ -15,17 +15,17 @@ readme = "README.md"
 [dependencies]
 # EXO dependencies
 exo-core = "0.1"
-exo-manifold = { path = "../exo-manifold" }
-exo-temporal = { path = "../exo-temporal" }
-exo-federation = { path = "../exo-federation" }
-exo-exotic = { path = "../exo-exotic" }
+exo-manifold = "0.1"
+exo-temporal = "0.1"
+exo-federation = "0.1"
+exo-exotic = "0.1"
 
 # Ruvector dependencies
 ruvector-core = { version = "0.1", features = ["simd"] }
 ruvector-graph = "0.1"
-ruvector-domain-expansion = { path = "../../../../crates/ruvector-domain-expansion", features = ["rvf"] }
-thermorust = { path = "../../../../crates/thermorust" }
-ruvector-dither = { path = "../../../../crates/ruvector-dither" }
+ruvector-domain-expansion = { version = "2.0", features = ["rvf"] }
+thermorust = "0.1"
+ruvector-dither = "0.1"
 rand = { version = "0.8", features = ["small_rng"] }
 
 # Utility dependencies

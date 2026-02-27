@@ -31,9 +31,13 @@ use std::f32::consts::PI;
 
 /// Build a ContextBucket from task difficulty.
 fn bucket_for(difficulty: f32, category: &str) -> ContextBucket {
-    let tier = if difficulty < 0.33 { "easy" }
-               else if difficulty < 0.67 { "medium" }
-               else { "hard" };
+    let tier = if difficulty < 0.33 {
+        "easy"
+    } else if difficulty < 0.67 {
+        "medium"
+    } else {
+        "hard"
+    };
     ContextBucket {
         difficulty_tier: tier.to_string(),
         category: category.to_string(),
@@ -71,7 +75,9 @@ pub struct ExoRetrievalDomain {
 
 impl ExoRetrievalDomain {
     pub fn new() -> Self {
-        Self { id: DomainId("exo-retrieval".to_string()) }
+        Self {
+            id: DomainId("exo-retrieval".to_string()),
+        }
     }
 
     fn task_id(index: usize) -> String {
@@ -79,9 +85,13 @@ impl ExoRetrievalDomain {
     }
 
     fn category(k: usize) -> String {
-        if k <= 5 { "top-k-small".to_string() }
-        else if k <= 20 { "top-k-medium".to_string() }
-        else { "top-k-large".to_string() }
+        if k <= 5 {
+            "top-k-small".to_string()
+        } else if k <= 20 {
+            "top-k-medium".to_string()
+        } else {
+            "top-k-large".to_string()
+        }
     }
 
     /// Simulate scoring a retrieval strategy on a task.
@@ -116,19 +126,27 @@ impl ExoRetrievalDomain {
 }
 
 impl Default for ExoRetrievalDomain {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Domain for ExoRetrievalDomain {
-    fn id(&self) -> &DomainId { &self.id }
+    fn id(&self) -> &DomainId {
+        &self.id
+    }
 
-    fn name(&self) -> &str { "EXO Vector Retrieval" }
+    fn name(&self) -> &str {
+        "EXO Vector Retrieval"
+    }
 
-    fn embedding_dim(&self) -> usize { 64 }
+    fn embedding_dim(&self) -> usize {
+        64
+    }
 
     fn generate_tasks(&self, count: usize, difficulty: f32) -> Vec<Task> {
         let dim = (64.0 + difficulty * 960.0) as usize;
-        let k   = (3.0 + difficulty * 47.0) as usize;
+        let k = (3.0 + difficulty * 47.0) as usize;
         let noise = difficulty * 0.5;
         let n_candidates = (k * 10).max(50);
         let cat = Self::category(k);
@@ -162,7 +180,10 @@ impl Domain for ExoRetrievalDomain {
         let sol = &solution.data;
 
         let recall = sol.get("recall").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
-        let latency_us = sol.get("latency_us").and_then(|x| x.as_u64()).unwrap_or(9999);
+        let latency_us = sol
+            .get("latency_us")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(9999);
         let retrieved_k = sol.get("retrieved_k").and_then(|x| x.as_u64()).unwrap_or(0);
         let target_k = task.spec.get("k").and_then(|x| x.as_u64()).unwrap_or(5);
 
@@ -171,10 +192,7 @@ impl Domain for ExoRetrievalDomain {
 
         let min_recall: f32 = (1.0 - task.difficulty * 0.4).max(0.5);
         let mut eval = Evaluation::composite(recall, efficiency, elegance);
-        eval.constraint_results = vec![
-            recall >= min_recall,
-            latency_us < 10_000,
-        ];
+        eval.constraint_results = vec![recall >= min_recall, latency_us < 10_000];
         eval
     }
 
@@ -183,7 +201,10 @@ impl Domain for ExoRetrievalDomain {
         let mut v = vec![0.0f32; 64];
 
         let recall = sol.get("recall").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
-        let latency = sol.get("latency_us").and_then(|x| x.as_u64()).unwrap_or(1000) as f32;
+        let latency = sol
+            .get("latency_us")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(1000) as f32;
         let k = sol.get("retrieved_k").and_then(|x| x.as_u64()).unwrap_or(5) as f32;
         let arm = sol.get("arm").and_then(|x| x.as_str()).unwrap_or("exact");
 
@@ -192,9 +213,15 @@ impl Domain for ExoRetrievalDomain {
         v[2] = (k / 50.0).min(1.0);
         // Strategy one-hot — aligned with ExoGraphDomain positions [5,6,7]
         match arm {
-            "exact"        => { v[5] = 1.0; }
-            "approximate"  => { v[6] = 1.0; }
-            "beam_rerank"  => { v[7] = 1.0; }
+            "exact" => {
+                v[5] = 1.0;
+            }
+            "approximate" => {
+                v[6] = 1.0;
+            }
+            "beam_rerank" => {
+                v[7] = 1.0;
+            }
             _ => {}
         }
         spread(recall, &mut v, 8, 24); // dims 8..31
@@ -205,12 +232,20 @@ impl Domain for ExoRetrievalDomain {
     fn reference_solution(&self, task: &Task) -> Option<Solution> {
         let dim = task.spec.get("dim").and_then(|x| x.as_u64()).unwrap_or(128) as usize;
         let k = task.spec.get("k").and_then(|x| x.as_u64()).unwrap_or(5) as usize;
-        let noise = task.spec.get("noise").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
+        let noise = task
+            .spec
+            .get("noise")
+            .and_then(|x| x.as_f64())
+            .unwrap_or(0.0) as f32;
 
         // Optimal arm: beam_rerank for large k, approximate for high-dim noisy
-        let arm = if k > 20 { "beam_rerank" }
-                  else if dim > 512 || noise > 0.3 { "approximate" }
-                  else { "exact" };
+        let arm = if k > 20 {
+            "beam_rerank"
+        } else if dim > 512 || noise > 0.3 {
+            "approximate"
+        } else {
+            "exact"
+        };
 
         let (recall, _, _) = Self::simulate_score(arm, dim, noise, k);
         // Reference latency: approximate is ~100µs, exact ~500µs at 512-dim
@@ -254,7 +289,9 @@ pub struct ExoGraphDomain {
 
 impl ExoGraphDomain {
     pub fn new() -> Self {
-        Self { id: DomainId("exo-graph".to_string()) }
+        Self {
+            id: DomainId("exo-graph".to_string()),
+        }
     }
 
     fn task_id(index: usize) -> String {
@@ -262,9 +299,12 @@ impl ExoGraphDomain {
     }
 
     /// Simulate graph traversal score for an arm + problem parameters.
-    fn simulate_score(arm: &str, n_entities: usize, max_hops: usize, min_coverage: usize)
-        -> (f32, f32, f32, u64)
-    {
+    fn simulate_score(
+        arm: &str,
+        n_entities: usize,
+        max_hops: usize,
+        min_coverage: usize,
+    ) -> (f32, f32, f32, u64) {
         let density = (n_entities as f32 / 1000.0).min(1.0);
         let depth_ratio = max_hops as f32 / 6.0;
 
@@ -297,29 +337,43 @@ impl ExoGraphDomain {
         let correctness = (entities_found as f32 / min_coverage as f32).min(1.0);
         let efficiency = if max_hops > 0 {
             (1.0 - hops_used as f32 / max_hops as f32).max(0.0)
-        } else { 0.0 };
-        let elegance = if coverage_ratio >= 1.0 && coverage_ratio <= 1.5 { 1.0 }
-                       else if coverage_ratio > 0.8 { 0.7 }
-                       else { 0.3 };
+        } else {
+            0.0
+        };
+        let elegance = if coverage_ratio >= 1.0 && coverage_ratio <= 1.5 {
+            1.0
+        } else if coverage_ratio > 0.8 {
+            0.7
+        } else {
+            0.3
+        };
 
         (correctness, efficiency, elegance, latency_us)
     }
 }
 
 impl Default for ExoGraphDomain {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Domain for ExoGraphDomain {
-    fn id(&self) -> &DomainId { &self.id }
+    fn id(&self) -> &DomainId {
+        &self.id
+    }
 
-    fn name(&self) -> &str { "EXO Hypergraph Traversal" }
+    fn name(&self) -> &str {
+        "EXO Hypergraph Traversal"
+    }
 
-    fn embedding_dim(&self) -> usize { 64 }
+    fn embedding_dim(&self) -> usize {
+        64
+    }
 
     fn generate_tasks(&self, count: usize, difficulty: f32) -> Vec<Task> {
-        let n_entities  = (50.0 + difficulty * 950.0) as usize;
-        let max_hops    = (2.0 + difficulty * 4.0) as usize;
+        let n_entities = (50.0 + difficulty * 950.0) as usize;
+        let max_hops = (2.0 + difficulty * 4.0) as usize;
         let min_coverage = (5.0 + difficulty * 95.0) as usize;
         let relations = ["causal", "temporal", "semantic", "structural"];
 
@@ -350,26 +404,43 @@ impl Domain for ExoGraphDomain {
     fn evaluate(&self, task: &Task, solution: &Solution) -> Evaluation {
         let sol = &solution.data;
 
-        let entities_found = sol.get("entities_found").and_then(|x| x.as_u64()).unwrap_or(0);
+        let entities_found = sol
+            .get("entities_found")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0);
         let hops_used = sol.get("hops_used").and_then(|x| x.as_u64()).unwrap_or(0);
-        let coverage_ratio = sol.get("coverage_ratio").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
+        let coverage_ratio = sol
+            .get("coverage_ratio")
+            .and_then(|x| x.as_f64())
+            .unwrap_or(0.0) as f32;
 
-        let min_coverage = task.spec.get("min_coverage").and_then(|x| x.as_u64()).unwrap_or(5);
-        let max_hops = task.spec.get("max_hops").and_then(|x| x.as_u64()).unwrap_or(3);
+        let min_coverage = task
+            .spec
+            .get("min_coverage")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(5);
+        let max_hops = task
+            .spec
+            .get("max_hops")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(3);
 
         let correctness = (entities_found as f32 / min_coverage as f32).min(1.0);
         let efficiency = if max_hops > 0 {
             (1.0 - hops_used as f32 / max_hops as f32).max(0.0)
-        } else { 0.0 };
-        let elegance = if coverage_ratio >= 1.0 && coverage_ratio <= 1.5 { 1.0 }
-                       else if coverage_ratio > 0.8 { 0.7 }
-                       else { 0.3 };
+        } else {
+            0.0
+        };
+        let elegance = if coverage_ratio >= 1.0 && coverage_ratio <= 1.5 {
+            1.0
+        } else if coverage_ratio > 0.8 {
+            0.7
+        } else {
+            0.3
+        };
 
         let mut eval = Evaluation::composite(correctness, efficiency, elegance);
-        eval.constraint_results = vec![
-            entities_found >= min_coverage,
-            hops_used <= max_hops,
-        ];
+        eval.constraint_results = vec![entities_found >= min_coverage, hops_used <= max_hops];
         eval
     }
 
@@ -377,9 +448,15 @@ impl Domain for ExoGraphDomain {
         let sol = &solution.data;
         let mut v = vec![0.0f32; 64];
 
-        let coverage = sol.get("coverage_ratio").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
+        let coverage = sol
+            .get("coverage_ratio")
+            .and_then(|x| x.as_f64())
+            .unwrap_or(0.0) as f32;
         let hops = sol.get("hops_used").and_then(|x| x.as_u64()).unwrap_or(0) as f32;
-        let entities = sol.get("entities_found").and_then(|x| x.as_u64()).unwrap_or(0) as f32;
+        let entities = sol
+            .get("entities_found")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as f32;
         let arm = sol.get("arm").and_then(|x| x.as_str()).unwrap_or("bfs");
 
         v[0] = coverage.min(1.0);
@@ -387,9 +464,15 @@ impl Domain for ExoGraphDomain {
         v[2] = (entities / 100.0).min(1.0);
         // Strategy one-hot — aligned with ExoRetrievalDomain at [5,6,7]
         match arm {
-            "bfs"          => { v[5] = 1.0; } // aligns with "exact"
-            "approx"       => { v[6] = 1.0; } // aligns with "approximate"
-            "hierarchical" => { v[7] = 1.0; } // aligns with "beam_rerank"
+            "bfs" => {
+                v[5] = 1.0;
+            } // aligns with "exact"
+            "approx" => {
+                v[6] = 1.0;
+            } // aligns with "approximate"
+            "hierarchical" => {
+                v[7] = 1.0;
+            } // aligns with "beam_rerank"
             _ => {}
         }
         spread(coverage.min(1.0), &mut v, 8, 24); // dims 8..31
@@ -398,9 +481,21 @@ impl Domain for ExoGraphDomain {
     }
 
     fn reference_solution(&self, task: &Task) -> Option<Solution> {
-        let n = task.spec.get("n_entities").and_then(|x| x.as_u64()).unwrap_or(100) as usize;
-        let max_hops = task.spec.get("max_hops").and_then(|x| x.as_u64()).unwrap_or(3) as usize;
-        let min_cov = task.spec.get("min_coverage").and_then(|x| x.as_u64()).unwrap_or(5) as usize;
+        let n = task
+            .spec
+            .get("n_entities")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(100) as usize;
+        let max_hops = task
+            .spec
+            .get("max_hops")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(3) as usize;
+        let min_cov = task
+            .spec
+            .get("min_coverage")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(5) as usize;
 
         // Optimal arm: hierarchical for large sparse graphs, approx for medium
         let arm = if n > 500 { "hierarchical" } else { "approx" };
@@ -460,14 +555,20 @@ impl ExoTransferAdapter {
         };
 
         // Select arm via Thompson Sampling
-        let arm_str = task.spec.get("arm").and_then(|x| x.as_str()).unwrap_or("exact");
+        let arm_str = task
+            .spec
+            .get("arm")
+            .and_then(|x| x.as_str())
+            .unwrap_or("exact");
         let arm = ArmId(arm_str.to_string());
         let bucket = bucket_for(difficulty, arm_str);
 
         // Synthesize a plausible solution for the chosen arm
         let solution = self.make_solution(&task, arm_str);
 
-        let eval = self.engine.evaluate_and_record(domain_id, &task, &solution, bucket, arm);
+        let eval = self
+            .engine
+            .evaluate_and_record(domain_id, &task, &solution, bucket, arm);
         eval.score
     }
 
@@ -479,19 +580,33 @@ impl ExoTransferAdapter {
             let k = spec.get("k").and_then(|x| x.as_u64()).unwrap_or(5) as usize;
             let noise = spec.get("noise").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
             let (recall, _, _) = ExoRetrievalDomain::simulate_score(arm, dim, noise, k);
-            let latency_us = match arm { "exact" => 500u64, "approximate" => 80, _ => 150 };
+            let latency_us = match arm {
+                "exact" => 500u64,
+                "approximate" => 80,
+                _ => 150,
+            };
             json!({ "recall": recall, "latency_us": latency_us, "retrieved_k": k, "arm": arm })
         } else {
-            let n = spec.get("n_entities").and_then(|x| x.as_u64()).unwrap_or(100) as usize;
+            let n = spec
+                .get("n_entities")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(100) as usize;
             let max_hops = spec.get("max_hops").and_then(|x| x.as_u64()).unwrap_or(3) as usize;
-            let min_cov = spec.get("min_coverage").and_then(|x| x.as_u64()).unwrap_or(5) as usize;
+            let min_cov = spec
+                .get("min_coverage")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(5) as usize;
             let (corr, _, _, lat) = ExoGraphDomain::simulate_score(arm, n, max_hops, min_cov);
             let found = (min_cov as f32 * 1.1 * corr) as u64;
             let hops = (max_hops as u64).saturating_sub(1).max(1);
             json!({ "entities_found": found, "hops_used": hops,
                     "coverage_ratio": 1.1 * corr, "arm": arm, "latency_us": lat })
         };
-        Solution { task_id: task.id.clone(), content: arm.to_string(), data }
+        Solution {
+            task_id: task.id.clone(),
+            content: arm.to_string(),
+            data,
+        }
     }
 
     /// Train both EXO domains for `cycles` iterations each.
@@ -503,11 +618,13 @@ impl ExoTransferAdapter {
 
         let ret_score: f32 = (0..cycles)
             .map(|i| self.train_one(&ret_id, difficulties[i % 3]))
-            .sum::<f32>() / cycles.max(1) as f32;
+            .sum::<f32>()
+            / cycles.max(1) as f32;
 
         let gph_score: f32 = (0..cycles)
             .map(|i| self.train_one(&gph_id, difficulties[i % 3]))
-            .sum::<f32>() / cycles.max(1) as f32;
+            .sum::<f32>()
+            / cycles.max(1) as f32;
 
         (ret_score, gph_score)
     }
@@ -523,7 +640,8 @@ impl ExoTransferAdapter {
         let difficulties = [0.3, 0.6, 0.9];
         let baseline: f32 = (0..measure_cycles)
             .map(|i| self.train_one(&gph_id, difficulties[i % 3]))
-            .sum::<f32>() / measure_cycles.max(1) as f32;
+            .sum::<f32>()
+            / measure_cycles.max(1) as f32;
 
         // Initiate transfer: inject retrieval priors into graph bandit
         self.engine.initiate_transfer(&src, &dst);
@@ -531,10 +649,15 @@ impl ExoTransferAdapter {
         // Measure graph performance AFTER transfer
         let transfer: f32 = (0..measure_cycles)
             .map(|i| self.train_one(&gph_id, difficulties[i % 3]))
-            .sum::<f32>() / measure_cycles.max(1) as f32;
+            .sum::<f32>()
+            / measure_cycles.max(1) as f32;
 
         // Acceleration = ratio of improvement
-        if baseline > 0.0 { transfer / baseline } else { 1.0 }
+        if baseline > 0.0 {
+            transfer / baseline
+        } else {
+            1.0
+        }
     }
 
     /// Summary from the scoreboard.
@@ -544,7 +667,9 @@ impl ExoTransferAdapter {
 }
 
 impl Default for ExoTransferAdapter {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -581,8 +706,16 @@ mod tests {
             }),
         };
         let eval = d.evaluate(task, &sol);
-        assert!(eval.correctness > 0.9, "recall=1.0 → correctness > 0.9, got {}", eval.correctness);
-        assert!(eval.score > 0.7, "perfect retrieval score > 0.7, got {}", eval.score);
+        assert!(
+            eval.correctness > 0.9,
+            "recall=1.0 → correctness > 0.9, got {}",
+            eval.correctness
+        );
+        assert!(
+            eval.score > 0.7,
+            "perfect retrieval score > 0.7, got {}",
+            eval.score
+        );
     }
 
     #[test]
@@ -593,7 +726,11 @@ mod tests {
         assert!(ref_sol.is_some());
         let sol = ref_sol.unwrap();
         let eval = d.evaluate(&tasks[0], &sol);
-        assert!(eval.score > 0.5, "reference solution should be good: {}", eval.score);
+        assert!(
+            eval.score > 0.5,
+            "reference solution should be good: {}",
+            eval.score
+        );
     }
 
     #[test]
@@ -615,7 +752,11 @@ mod tests {
         assert!(ref_sol.is_some());
         let sol = ref_sol.unwrap();
         let eval = d.evaluate(&tasks[0], &sol);
-        assert!(eval.correctness > 0.5, "reference solution correctness: {}", eval.correctness);
+        assert!(
+            eval.correctness > 0.5,
+            "reference solution correctness: {}",
+            eval.correctness
+        );
     }
 
     #[test]
@@ -647,12 +788,22 @@ mod tests {
         assert_eq!(emb_g.vector.len(), 64, "graph embedding must be 64-dim");
 
         // Both use "approximate"/"approx" → v[6] should be 1.0 in both
-        assert!((emb_r.vector[6] - 1.0).abs() < 1e-6, "retrieval approx arm at v[6]");
-        assert!((emb_g.vector[6] - 1.0).abs() < 1e-6, "graph approx arm at v[6]");
+        assert!(
+            (emb_r.vector[6] - 1.0).abs() < 1e-6,
+            "retrieval approx arm at v[6]"
+        );
+        assert!(
+            (emb_g.vector[6] - 1.0).abs() < 1e-6,
+            "graph approx arm at v[6]"
+        );
 
         // Cosine similarity should be meaningful (both represent "approximate" strategy)
         let sim = emb_r.cosine_similarity(&emb_g);
-        assert!(sim > 0.3, "aligned embeddings should have decent similarity: {}", sim);
+        assert!(
+            sim > 0.3,
+            "aligned embeddings should have decent similarity: {}",
+            sim
+        );
     }
 
     #[test]
@@ -661,8 +812,16 @@ mod tests {
 
         // Train for a few cycles
         let (ret_score, gph_score) = adapter.warmup(10);
-        assert!(ret_score >= 0.0 && ret_score <= 1.0, "retrieval score in [0,1]: {}", ret_score);
-        assert!(gph_score >= 0.0 && gph_score <= 1.0, "graph score in [0,1]: {}", gph_score);
+        assert!(
+            ret_score >= 0.0 && ret_score <= 1.0,
+            "retrieval score in [0,1]: {}",
+            ret_score
+        );
+        assert!(
+            gph_score >= 0.0 && gph_score <= 1.0,
+            "graph score in [0,1]: {}",
+            gph_score
+        );
 
         // Transfer — acceleration >= 0
         let accel = adapter.transfer_ret_to_graph(5);
@@ -672,7 +831,7 @@ mod tests {
     #[test]
     fn test_bucket_tier_assignment() {
         let easy = bucket_for(0.1, "top-k-small");
-        let med  = bucket_for(0.5, "top-k-medium");
+        let med = bucket_for(0.5, "top-k-medium");
         let hard = bucket_for(0.9, "top-k-large");
         assert_eq!(easy.difficulty_tier, "easy");
         assert_eq!(med.difficulty_tier, "medium");

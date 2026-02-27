@@ -57,10 +57,12 @@ impl TimeCrystalExperiment {
         for tick in 0..total_ticks {
             // Periodic input: sin wave at crystal frequency
             let phase = 2.0 * std::f32::consts::PI * tick as f32 / self.crystal_period as f32;
-            let input: Vec<f32> = (0..100).map(|i| {
-                let spatial_phase = 2.0 * std::f32::consts::PI * i as f32 / 100.0;
-                (phase + spatial_phase).sin() * 0.5 + 0.5
-            }).collect();
+            let input: Vec<f32> = (0..100)
+                .map(|i| {
+                    let spatial_phase = 2.0 * std::f32::consts::PI * i as f32 / 100.0;
+                    (phase + spatial_phase).sin() * 0.5 + 0.5
+                })
+                .collect();
 
             let spikes = self.backend.lif_tick(&input);
             spike_counts.push(spikes.iter().filter(|&&s| s).count());
@@ -69,17 +71,22 @@ impl TimeCrystalExperiment {
 
         // Detect period: autocorrelation of spike count signal
         let measured_period = detect_period(&spike_counts);
-        let period_match = measured_period.map(|p| p == self.crystal_period).unwrap_or(false);
+        let period_match = measured_period
+            .map(|p| p == self.crystal_period)
+            .unwrap_or(false);
 
         // Stability: variance of inter-peak intervals
         let mean_coh = coherences.iter().sum::<f32>() / coherences.len().max(1) as f32;
-        let variance = coherences.iter()
+        let variance = coherences
+            .iter()
             .map(|&c| (c - mean_coh).powi(2) as f64)
-            .sum::<f64>() / coherences.len().max(1) as f64;
+            .sum::<f64>()
+            / coherences.len().max(1) as f64;
 
         // Symmetry breaking: crystal phase occupies subset of period states
         let total_spikes: usize = spike_counts.iter().sum();
-        let crystal_spikes = spike_counts.chunks(self.crystal_period)
+        let crystal_spikes = spike_counts
+            .chunks(self.crystal_period)
             .map(|chunk| chunk[0])
             .sum::<usize>();
         let symmetry_ratio = crystal_spikes as f64 / total_spikes.max(1) as f64;
@@ -98,13 +105,17 @@ impl TimeCrystalExperiment {
 
 /// Detect dominant period via autocorrelation
 fn detect_period(signal: &[usize]) -> Option<usize> {
-    if signal.len() < 4 { return None; }
+    if signal.len() < 4 {
+        return None;
+    }
     let mean = signal.iter().sum::<usize>() as f64 / signal.len() as f64;
     let max_lag = signal.len() / 2;
     let mut best_lag = None;
     let mut best_corr = f64::NEG_INFINITY;
     for lag in 2..max_lag {
-        let corr = signal.iter().zip(signal[lag..].iter())
+        let corr = signal
+            .iter()
+            .zip(signal[lag..].iter())
             .map(|(&a, &b)| (a as f64 - mean) * (b as f64 - mean))
             .sum::<f64>();
         if corr > best_corr {

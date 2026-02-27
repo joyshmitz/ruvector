@@ -24,8 +24,7 @@ pub fn langevin_noise_vec(beta: f32, n: usize, rng: &mut impl Rng) -> Vec<f32> {
         return vec![0.0; n];
     }
     let sigma = (2.0 / beta).sqrt();
-    let dist = Normal::new(0.0_f32, sigma)
-        .unwrap_or_else(|_| Normal::new(0.0_f32, 1e-6).unwrap());
+    let dist = Normal::new(0.0_f32, sigma).unwrap_or_else(|_| Normal::new(0.0_f32, 1e-6).unwrap());
     (0..n).map(|_| dist.sample(rng)).collect()
 }
 

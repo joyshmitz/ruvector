@@ -97,7 +97,11 @@ fn test_transfer_manifold_accumulates() {
         let result = orch.run_cycle();
         // Manifold stores one entry per (src, dst) pair; repeated writes
         // update the same entry, so count stays at 1.
-        assert!(result.manifold_entries >= 1, "cycle {}: manifold must hold ≥1 entry", i);
+        assert!(
+            result.manifold_entries >= 1,
+            "cycle {}: manifold must hold ≥1 entry",
+            i
+        );
     }
 }
 

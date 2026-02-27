@@ -40,15 +40,15 @@
 
 #![cfg_attr(feature = "no_std", no_std)]
 
+pub mod channel;
 pub mod golden;
 pub mod pi;
 pub mod quantize;
-pub mod channel;
 
+pub use channel::ChannelDither;
 pub use golden::GoldenRatioDither;
 pub use pi::PiDither;
 pub use quantize::{quantize_dithered, quantize_slice_dithered};
-pub use channel::ChannelDither;
 
 /// Trait implemented by any deterministic dither source.
 pub trait DitherSource {

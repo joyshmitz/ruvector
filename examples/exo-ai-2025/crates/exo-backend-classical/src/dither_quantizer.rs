@@ -55,9 +55,7 @@ impl DitheredQuantizer {
             DitherKind::GoldenRatio => {
                 Source::Golden(ChannelDither::new(layer_id, n_channels, bits, eps))
             }
-            DitherKind::Pi => {
-                Source::Pi(PiDither::from_tensor_id(layer_id))
-            }
+            DitherKind::Pi => Source::Pi(PiDither::from_tensor_id(layer_id)),
         };
         Self { source, bits, eps }
     }

@@ -114,7 +114,9 @@ impl EwcPlusPlusBackend {
     fn ewc_penalty(&self, weight_id: WeightId, current: &[f32]) -> f32 {
         match (self.fisher.get(&weight_id), self.theta_star.get(&weight_id)) {
             (Some(f), Some(theta)) => {
-                let penalty: f32 = f.values.iter()
+                let penalty: f32 = f
+                    .values
+                    .iter()
                     .zip(current.iter().zip(theta.iter()))
                     .map(|(fi, (ci, ti))| fi * (ci - ti).powi(2))
                     .sum::<f32>();
@@ -126,7 +128,9 @@ impl EwcPlusPlusBackend {
 }
 
 impl PlasticityBackend for EwcPlusPlusBackend {
-    fn name(&self) -> &'static str { "ewc++" }
+    fn name(&self) -> &'static str {
+        "ewc++"
+    }
 
     fn compute_delta(
         &self,
@@ -136,23 +140,31 @@ impl PlasticityBackend for EwcPlusPlusBackend {
         lr: f32,
     ) -> PlasticityDelta {
         let penalty = self.ewc_penalty(weight_id, current);
-        let phi_applied = self.fisher.get(&weight_id)
+        let phi_applied = self
+            .fisher
+            .get(&weight_id)
             .map(|f| f.phi_weight > 1.0)
             .unwrap_or(false);
 
         // EWC++ update: θ ← θ - lr·(∇L + λ·F·(θ - θ*))
-        let delta: Vec<f32> = gradient.iter().enumerate().map(|(i, g)| {
-            let ewc_term = self.fisher.get(&weight_id)
-                .zip(self.theta_star.get(&weight_id))
-                .map(|(f, t)| {
-                    let fi = f.values[i.min(f.values.len() - 1)];
-                    let ci = current[i.min(current.len() - 1)];
-                    let ti = t[i.min(t.len() - 1)];
-                    self.lambda * fi * (ci - ti) * f.phi_weight
-                })
-                .unwrap_or(0.0);
-            -lr * (g + ewc_term)
-        }).collect();
+        let delta: Vec<f32> = gradient
+            .iter()
+            .enumerate()
+            .map(|(i, g)| {
+                let ewc_term = self
+                    .fisher
+                    .get(&weight_id)
+                    .zip(self.theta_star.get(&weight_id))
+                    .map(|(f, t)| {
+                        let fi = f.values[i.min(f.values.len() - 1)];
+                        let ci = current[i.min(current.len() - 1)];
+                        let ti = t[i.min(t.len() - 1)];
+                        self.lambda * fi * (ci - ti) * f.phi_weight
+                    })
+                    .unwrap_or(0.0);
+                -lr * (g + ewc_term)
+            })
+            .collect();
 
         PlasticityDelta {
             weight_id,
@@ -177,16 +189,24 @@ pub struct BtspBackend {
 
 impl BtspBackend {
     pub fn new() -> Self {
-        Self { window_ms: 2000.0, plateau_threshold: 0.7, lr_btsp: 0.3 }
+        Self {
+            window_ms: 2000.0,
+            plateau_threshold: 0.7,
+            lr_btsp: 0.3,
+        }
     }
 }
 
 impl Default for BtspBackend {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PlasticityBackend for BtspBackend {
-    fn name(&self) -> &'static str { "btsp" }
+    fn name(&self) -> &'static str {
+        "btsp"
+    }
 
     fn compute_delta(
         &self,
@@ -198,11 +218,18 @@ impl PlasticityBackend for BtspBackend {
         // BTSP: large update if plateau potential exceeds threshold
         let n = gradient.len().max(1);
         let plateau = gradient.iter().map(|g| g.abs()).sum::<f32>() / n as f32;
-        let btsp_lr = if plateau > self.plateau_threshold { self.lr_btsp } else { self.lr_btsp * 0.1 };
+        let btsp_lr = if plateau > self.plateau_threshold {
+            self.lr_btsp
+        } else {
+            self.lr_btsp * 0.1
+        };
         let delta: Vec<f32> = gradient.iter().map(|g| -btsp_lr * g).collect();
         PlasticityDelta {
-            weight_id, delta, mode: PlasticityMode::Behavioral,
-            ewc_penalty: 0.0, phi_protection_applied: false,
+            weight_id,
+            delta,
+            mode: PlasticityMode::Behavioral,
+            ewc_penalty: 0.0,
+            phi_protection_applied: false,
         }
     }
 }
@@ -219,10 +246,17 @@ pub struct PlasticityEngine {
 
 impl PlasticityEngine {
     pub fn new(lambda: f32) -> Self {
-        Self { ewc: EwcPlusPlusBackend::new(lambda), btsp: None, default_mode: PlasticityMode::Instant }
+        Self {
+            ewc: EwcPlusPlusBackend::new(lambda),
+            btsp: None,
+            default_mode: PlasticityMode::Instant,
+        }
     }
 
-    pub fn with_btsp(mut self) -> Self { self.btsp = Some(BtspBackend::new()); self }
+    pub fn with_btsp(mut self) -> Self {
+        self.btsp = Some(BtspBackend::new());
+        self
+    }
 
     /// Set Φ-based protection weight for a consolidated pattern.
     /// phi > 1.0 protects the pattern more strongly from forgetting.
@@ -244,14 +278,20 @@ impl PlasticityEngine {
 
         let mode = mode.unwrap_or(self.default_mode);
         match mode {
-            PlasticityMode::Instant | PlasticityMode::Classic =>
-                self.ewc.compute_delta(weight_id, current, gradient, lr),
-            PlasticityMode::Behavioral =>
-                self.btsp.as_ref().map(|b| b.compute_delta(weight_id, current, gradient, lr))
-                    .unwrap_or_else(|| self.ewc.compute_delta(weight_id, current, gradient, lr)),
+            PlasticityMode::Instant | PlasticityMode::Classic => {
+                self.ewc.compute_delta(weight_id, current, gradient, lr)
+            }
+            PlasticityMode::Behavioral => self
+                .btsp
+                .as_ref()
+                .map(|b| b.compute_delta(weight_id, current, gradient, lr))
+                .unwrap_or_else(|| self.ewc.compute_delta(weight_id, current, gradient, lr)),
             PlasticityMode::Eligibility =>
-                // E-prop: use EWC with reduced learning rate (credit assignment delay)
-                self.ewc.compute_delta(weight_id, current, gradient, lr * 0.3),
+            // E-prop: use EWC with reduced learning rate (credit assignment delay)
+            {
+                self.ewc
+                    .compute_delta(weight_id, current, gradient, lr * 0.3)
+            }
         }
     }
 }
@@ -283,7 +323,10 @@ mod tests {
         let gradient = vec![0.8f32; 10]; // Above plateau threshold
         let delta = btsp.compute_delta(0, &vec![0.0; 10], &gradient, 0.01);
         // BTSP lr (0.3) should dominate over standard lr (0.01)
-        assert!(delta.delta[0].abs() > 0.1, "BTSP should produce large one-shot update");
+        assert!(
+            delta.delta[0].abs() > 0.1,
+            "BTSP should produce large one-shot update"
+        );
     }
 
     #[test]
@@ -300,7 +343,9 @@ mod tests {
         let delta_low_phi = engine.compute_delta(2, &current, &gradient, 0.01, None);
 
         // High Φ pattern should have larger EWC penalty (more protection)
-        assert!(delta_high_phi.ewc_penalty > delta_low_phi.ewc_penalty,
-            "High Φ patterns should be protected more strongly");
+        assert!(
+            delta_high_phi.ewc_penalty > delta_low_phi.ewc_penalty,
+            "High Φ patterns should be protected more strongly"
+        );
     }
 }

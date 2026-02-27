@@ -1,7 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use ruvector_dither::{
-    channel::ChannelDither, GoldenRatioDither, PiDither, quantize_dithered,
-    quantize_slice_dithered,
+    channel::ChannelDither, quantize_dithered, quantize_slice_dithered, GoldenRatioDither, PiDither,
 };
 
 fn bench_single_quantize(c: &mut Criterion) {

@@ -67,13 +67,13 @@ pub mod types;
 pub use anticipation::{
     anticipate, AnticipationHint, PrefetchCache, SequentialPatternTracker, TemporalPhase,
 };
-pub use quantum_decay::{PatternDecoherence, QuantumDecayPool};
 pub use causal::{CausalConeType, CausalGraph, CausalGraphStats};
 pub use consolidation::{
     compute_salience, compute_salience_batch, consolidate, ConsolidationConfig,
     ConsolidationResult, ConsolidationStats,
 };
 pub use long_term::{LongTermConfig, LongTermStats, LongTermStore};
+pub use quantum_decay::{PatternDecoherence, QuantumDecayPool};
 pub use short_term::{ShortTermBuffer, ShortTermConfig, ShortTermStats};
 pub use types::*;
 

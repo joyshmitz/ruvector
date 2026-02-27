@@ -517,7 +517,7 @@ dependencies = [
  "clap",
  "criterion-plot",
  "is-terminal",
- "itertools 0.10.5",
+ "itertools",
  "num-traits",
  "once_cell",
  "oorandom",
@@ -538,7 +538,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
 dependencies = [
  "cast",
- "itertools 0.10.5",
+ "itertools",
 ]
 
 [[package]]
@@ -789,11 +789,11 @@ dependencies = [
 name = "exo-backend-classical"
 version = "0.1.0"
 dependencies = [
- "exo-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "exo-core",
  "exo-exotic",
  "exo-federation",
  "exo-manifold",
- "exo-temporal 0.1.0",
+ "exo-temporal",
  "parking_lot",
  "rand 0.8.5",
  "ruvector-core",
@@ -803,22 +803,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thermorust",
- "thiserror 2.0.17",
- "uuid",
-]
-
-[[package]]
-name = "exo-backend-classical"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1c8ca605c4c1b15dde3f472a853fbf5a18b7c84ba91b2367724397e6171aeb4"
-dependencies = [
- "exo-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parking_lot",
- "ruvector-core",
- "ruvector-graph",
- "serde",
- "serde_json",
  "thiserror 2.0.17",
  "uuid",
 ]
@@ -840,30 +824,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "exo-core"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3814a1f1b7022011545ab7cbc43977c7bf1ea037b5d2a44ce97bb58df61a88e"
-dependencies = [
- "anyhow",
- "dashmap",
- "ruvector-core",
- "ruvector-graph",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "exo-exotic"
 version = "0.1.0"
 dependencies = [
  "criterion",
  "dashmap",
- "exo-core 0.1.0",
- "exo-temporal 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "exo-core",
+ "exo-temporal",
  "ordered-float",
  "parking_lot",
  "petgraph",
@@ -883,7 +850,7 @@ dependencies = [
  "anyhow",
  "chacha20poly1305",
  "dashmap",
- "exo-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "exo-core",
  "hex",
  "hmac",
  "pqcrypto-kyber",
@@ -905,7 +872,7 @@ name = "exo-hypergraph"
 version = "0.1.0"
 dependencies = [
  "dashmap",
- "exo-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "exo-core",
  "petgraph",
  "serde",
  "serde_json",
@@ -919,7 +886,7 @@ name = "exo-manifold"
 version = "0.1.0"
 dependencies = [
  "approx",
- "exo-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "exo-core",
  "ndarray",
  "parking_lot",
  "ruvector-domain-expansion",
@@ -932,8 +899,8 @@ name = "exo-node"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "exo-backend-classical 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "exo-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "exo-backend-classical",
+ "exo-core",
  "napi",
  "napi-build",
  "napi-derive",
@@ -951,30 +918,13 @@ dependencies = [
  "ahash",
  "chrono",
  "dashmap",
- "exo-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "exo-core",
  "parking_lot",
  "petgraph",
  "ruvector-domain-expansion",
  "serde",
  "thiserror 2.0.17",
  "tokio",
- "uuid",
-]
-
-[[package]]
-name = "exo-temporal"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9f826a00a26db45211fa82af14b4938e3dc448f86a0e6e12f73cdb43d03e637"
-dependencies = [
- "ahash",
- "chrono",
- "dashmap",
- "exo-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parking_lot",
- "petgraph",
- "serde",
- "thiserror 2.0.17",
  "uuid",
 ]
 
@@ -1304,15 +1254,6 @@ name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
 dependencies = [
  "either",
 ]
@@ -2550,7 +2491,6 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 name = "thermorust"
 version = "0.1.0"
 dependencies = [
- "itertools 0.12.1",
  "rand 0.8.5",
  "rand_distr",
 ]

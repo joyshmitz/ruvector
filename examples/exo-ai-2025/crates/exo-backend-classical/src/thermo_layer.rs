@@ -23,7 +23,7 @@
 
 use rand::SeedableRng;
 use thermorust::{
-    dynamics::{Params, step_discrete},
+    dynamics::{step_discrete, Params},
     energy::{Couplings, EnergyModel, Ising},
     metrics::magnetisation,
     State,
@@ -93,7 +93,12 @@ impl ThermoLayer {
             clamp_mask: vec![false; cfg.n],
         };
         let rng = rand::rngs::SmallRng::seed_from_u64(cfg.seed);
-        Self { model, state, params, rng }
+        Self {
+            model,
+            state,
+            params,
+            rng,
+        }
     }
 
     /// Apply activations as external fields, run MH steps, return coherence signal.
@@ -152,7 +157,11 @@ mod tests {
 
     #[test]
     fn thermo_layer_runs_without_panic() {
-        let cfg = ThermoConfig { n: 8, steps_per_call: 10, ..Default::default() };
+        let cfg = ThermoConfig {
+            n: 8,
+            steps_per_call: 10,
+            ..Default::default()
+        };
         let mut layer = ThermoLayer::new(cfg);
         let mut acts = vec![1.0_f32; 8];
         let sig = layer.run(&mut acts, 10);
@@ -163,18 +172,29 @@ mod tests {
 
     #[test]
     fn activations_are_binarised() {
-        let cfg = ThermoConfig { n: 4, steps_per_call: 0, ..Default::default() };
+        let cfg = ThermoConfig {
+            n: 4,
+            steps_per_call: 0,
+            ..Default::default()
+        };
         let mut layer = ThermoLayer::new(cfg);
         let mut acts = vec![0.7_f32, -0.3, 0.1, -0.9];
         layer.run(&mut acts, 0);
         for a in &acts {
-            assert!((*a - 1.0).abs() < 1e-6 || (*a + 1.0).abs() < 1e-6, "not ±1: {a}");
+            assert!(
+                (*a - 1.0).abs() < 1e-6 || (*a + 1.0).abs() < 1e-6,
+                "not ±1: {a}"
+            );
         }
     }
 
     #[test]
     fn lambda_finite_after_many_steps() {
-        let cfg = ThermoConfig { n: 16, beta: 5.0, ..Default::default() };
+        let cfg = ThermoConfig {
+            n: 16,
+            beta: 5.0,
+            ..Default::default()
+        };
         let mut layer = ThermoLayer::new(cfg);
         for _ in 0..10 {
             let mut acts = vec![1.0_f32; 16];

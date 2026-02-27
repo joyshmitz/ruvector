@@ -13,11 +13,7 @@ pub trait SubstrateBackend: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// Similarity search in the backend's representational space.
-    fn similarity_search(
-        &self,
-        query: &[f32],
-        k: usize,
-    ) -> Vec<SearchResult>;
+    fn similarity_search(&self, query: &[f32], k: usize) -> Vec<SearchResult>;
 
     /// One-shot pattern adaptation (analogous to manifold deformation).
     fn adapt(&mut self, pattern: &[f32], reward: f32) -> AdaptResult;

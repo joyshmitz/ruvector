@@ -104,10 +104,7 @@ impl Domain for StrangeLoopDomain {
             v[7] = 1.0;
         }
         for i in 8..64 {
-            v[i] = (score * i as f32 * std::f32::consts::PI / 64.0)
-                .sin()
-                .abs()
-                * 0.5;
+            v[i] = (score * i as f32 * std::f32::consts::PI / 64.0).sin().abs() * 0.5;
         }
         DomainEmbedding::new(v, self.id.clone())
     }
@@ -117,11 +114,7 @@ impl Domain for StrangeLoopDomain {
     }
 
     fn reference_solution(&self, task: &Task) -> Option<Solution> {
-        let depth = task
-            .spec
-            .get("depth")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
+        let depth = task.spec.get("depth").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         Some(Solution {
             task_id: task.id.clone(),
             content: format!(

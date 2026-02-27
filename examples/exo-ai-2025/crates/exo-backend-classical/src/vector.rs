@@ -67,28 +67,30 @@ impl VectorIndexWrapper {
     ) -> ExoResult<Vec<SearchResult>> {
         // Convert exo_core::Filter Equal conditions to ruvector's HashMap filter
         let filter = _filter.and_then(|f| {
-            let map: HashMap<String, serde_json::Value> = f
-                .conditions
-                .iter()
-                .filter_map(|cond| {
-                    use exo_core::FilterOperator;
-                    if let FilterOperator::Equal = cond.operator {
-                        let val = match &cond.value {
-                            MetadataValue::String(s) => serde_json::Value::String(s.clone()),
-                            MetadataValue::Number(n) => {
-                                serde_json::Number::from_f64(*n)
-                                    .map(serde_json::Value::Number)?
-                            }
-                            MetadataValue::Boolean(b) => serde_json::Value::Bool(*b),
-                            MetadataValue::Array(_) => return None,
-                        };
-                        Some((cond.field.clone(), val))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if map.is_empty() { None } else { Some(map) }
+            let map: HashMap<String, serde_json::Value> =
+                f.conditions
+                    .iter()
+                    .filter_map(|cond| {
+                        use exo_core::FilterOperator;
+                        if let FilterOperator::Equal = cond.operator {
+                            let val = match &cond.value {
+                                MetadataValue::String(s) => serde_json::Value::String(s.clone()),
+                                MetadataValue::Number(n) => serde_json::Number::from_f64(*n)
+                                    .map(serde_json::Value::Number)?,
+                                MetadataValue::Boolean(b) => serde_json::Value::Bool(*b),
+                                MetadataValue::Array(_) => return None,
+                            };
+                            Some((cond.field.clone(), val))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+            if map.is_empty() {
+                None
+            } else {
+                Some(map)
+            }
         });
 
         // Build search query

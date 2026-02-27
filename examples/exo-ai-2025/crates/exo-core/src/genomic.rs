@@ -205,8 +205,7 @@ impl GenomicPatternStore {
             .patterns
             .iter()
             .map(|p| {
-                let sim =
-                    Self::cosine_similarity(&query.health_embedding, &p.health_embedding);
+                let sim = Self::cosine_similarity(&query.health_embedding, &p.health_embedding);
                 let phi_w = self.weights.phi_weight(&p.neuro_profile);
                 GenomicSearchResult {
                     id: p.id,
@@ -315,8 +314,7 @@ mod tests {
         let results = store.search(&query, 3);
         assert!(!results.is_empty());
         assert!(
-            results[0].weighted_score
-                >= results.last().map(|r| r.weighted_score).unwrap_or(0.0)
+            results[0].weighted_score >= results.last().map(|r| r.weighted_score).unwrap_or(0.0)
         );
     }
 

@@ -15,7 +15,7 @@ readme = "README.md"
 [dependencies]
 # Core types from exo-core
 exo-core = "0.1"
-ruvector-domain-expansion = { path = "../../../../crates/ruvector-domain-expansion" }
+ruvector-domain-expansion = "2.0"
 
 # Concurrent data structures
 dashmap = "6.1"

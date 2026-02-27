@@ -86,13 +86,20 @@ impl CrossParadigmWitness {
             WitnessDecision::Deny => u64::MAX,
         };
         // Fold optional fields
-        if let Some(e) = w.sheaf_energy { state[0] ^= e.to_bits(); }
-        if let Some(l) = w.lambda_min_cut { state[1] ^= l.to_bits(); }
-        if let Some(p) = w.phi_value { state[2] ^= p.to_bits(); }
+        if let Some(e) = w.sheaf_energy {
+            state[0] ^= e.to_bits();
+        }
+        if let Some(l) = w.lambda_min_cut {
+            state[1] ^= l.to_bits();
+        }
+        if let Some(p) = w.phi_value {
+            state[2] ^= p.to_bits();
+        }
         // siphash-like mixing
         let mut result = [0u8; 32];
         for i in 0..4 {
-            let mixed = state[i].wrapping_mul(0x6c62272e07bb0142)
+            let mixed = state[i]
+                .wrapping_mul(0x6c62272e07bb0142)
                 .wrapping_add(0x62b821756295c58d);
             let bytes = mixed.to_le_bytes();
             result[i * 8..(i + 1) * 8].copy_from_slice(&bytes);
@@ -114,13 +121,16 @@ impl CrossParadigmWitness {
         buf.extend_from_slice(&self.prior_hash);
         // Optional fields as TLV
         if let Some(e) = self.sheaf_energy {
-            buf.push(0x01); buf.extend_from_slice(&e.to_le_bytes());
+            buf.push(0x01);
+            buf.extend_from_slice(&e.to_le_bytes());
         }
         if let Some(l) = self.lambda_min_cut {
-            buf.push(0x02); buf.extend_from_slice(&l.to_le_bytes());
+            buf.push(0x02);
+            buf.extend_from_slice(&l.to_le_bytes());
         }
         if let Some(p) = self.phi_value {
-            buf.push(0x03); buf.extend_from_slice(&p.to_le_bytes());
+            buf.push(0x03);
+            buf.extend_from_slice(&p.to_le_bytes());
         }
         buf.extend_from_slice(&self.signature);
         buf
@@ -135,7 +145,10 @@ pub struct WitnessChain {
 
 impl WitnessChain {
     pub fn new() -> Self {
-        Self { witnesses: Vec::new(), next_sequence: 0 }
+        Self {
+            witnesses: Vec::new(),
+            next_sequence: 0,
+        }
     }
 
     pub fn append(&mut self, mut witness: CrossParadigmWitness) -> u64 {
@@ -158,13 +171,21 @@ impl WitnessChain {
         true
     }
 
-    pub fn len(&self) -> usize { self.witnesses.len() }
-    pub fn is_empty(&self) -> bool { self.witnesses.is_empty() }
-    pub fn get(&self, idx: usize) -> Option<&CrossParadigmWitness> { self.witnesses.get(idx) }
+    pub fn len(&self) -> usize {
+        self.witnesses.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.witnesses.is_empty()
+    }
+    pub fn get(&self, idx: usize) -> Option<&CrossParadigmWitness> {
+        self.witnesses.get(idx)
+    }
 }
 
 impl Default for WitnessChain {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -192,7 +213,10 @@ mod tests {
         chain.append(CrossParadigmWitness::new(1, id, WitnessDecision::Permit));
         // Tamper with first witness
         chain.witnesses[0].phi_value = Some(9999.0);
-        assert!(!chain.verify_chain(), "Tampered chain should fail verification");
+        assert!(
+            !chain.verify_chain(),
+            "Tampered chain should fail verification"
+        );
     }
 
     #[test]

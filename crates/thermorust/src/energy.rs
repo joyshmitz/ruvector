@@ -17,7 +17,10 @@ pub struct Couplings {
 impl Couplings {
     /// Build zero-coupling weights for `n` units.
     pub fn zeros(n: usize) -> Self {
-        Self { j: vec![0.0; n * n], h: vec![0.0; n] }
+        Self {
+            j: vec![0.0; n * n],
+            h: vec![0.0; n],
+        }
     }
 
     /// Build ferromagnetic ring couplings: J_{i, i+1} = strength.

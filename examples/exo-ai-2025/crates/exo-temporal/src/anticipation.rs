@@ -281,11 +281,8 @@ pub fn anticipate(
                 let dim = 32usize;
                 let query_vec: Vec<f32> = (0..dim)
                     .map(|i| {
-                        let angle = 2.0
-                            * std::f64::consts::PI
-                            * phase_ratio
-                            * (i + 1) as f64
-                            / dim as f64;
+                        let angle =
+                            2.0 * std::f64::consts::PI * phase_ratio * (i + 1) as f64 / dim as f64;
                         angle.sin() as f32
                     })
                     .collect();

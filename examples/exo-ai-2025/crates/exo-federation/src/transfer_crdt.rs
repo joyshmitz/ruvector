@@ -82,11 +82,7 @@ impl TransferCrdt {
     }
 
     /// Retrieve the best known prior for a domain pair (if any).
-    pub fn best_prior_for(
-        &self,
-        src: &DomainId,
-        dst: &DomainId,
-    ) -> Option<&TransferPriorSummary> {
+    pub fn best_prior_for(&self, src: &DomainId, dst: &DomainId) -> Option<&TransferPriorSummary> {
         let key = format!("{}:{}", src.0, dst.0);
         self.priors.get(&key)
     }
@@ -162,7 +158,7 @@ mod tests {
         let src = DomainId("x".to_string());
         let dst = DomainId("y".to_string());
 
-        node_a.publish_prior(&src, &dst, 0.1, 0.5, 5);  // older cycle
+        node_a.publish_prior(&src, &dst, 0.1, 0.5, 5); // older cycle
         node_b.publish_prior(&src, &dst, 0.2, 0.9, 10); // newer wins
 
         node_a.merge_peer(&node_b);

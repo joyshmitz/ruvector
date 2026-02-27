@@ -2,7 +2,7 @@
 
 use rand::SeedableRng;
 use thermorust::{
-    dynamics::{anneal_discrete, anneal_continuous, inject_spikes, step_discrete, Params},
+    dynamics::{anneal_continuous, anneal_discrete, inject_spikes, step_discrete, Params},
     energy::{Couplings, EnergyModel, Ising},
     metrics::{binary_entropy, magnetisation, overlap},
     motifs::IsingMotif,
@@ -28,7 +28,10 @@ fn all_up_ring_energy_is_negative() {
     let s = State::ones(n);
     let e = model.energy(&s);
     // For a ferromagnetic ring with J=0.2, all-up: E = −n * 0.2
-    assert!(e < 0.0, "ferromagnetic ring energy should be negative for aligned spins: {e}");
+    assert!(
+        e < 0.0,
+        "ferromagnetic ring energy should be negative for aligned spins: {e}"
+    );
 }
 
 #[test]
@@ -47,7 +50,10 @@ fn antiferromagnetic_ring_energy_is_positive() {
     let model = Ising::new(Couplings { j, h: vec![0.0; n] });
     let s = State::ones(n); // all-up is frustrated for antiferromagnet
     let e = model.energy(&s);
-    assert!(e > 0.0, "antiferromagnetic all-up energy should be positive: {e}");
+    assert!(
+        e > 0.0,
+        "antiferromagnetic all-up energy should be positive: {e}"
+    );
 }
 
 #[test]
@@ -58,7 +64,10 @@ fn energy_is_symmetric_under_global_flip() {
     let s_dn = State::neg_ones(n);
     let e_up = model.energy(&s_up);
     let e_dn = model.energy(&s_dn);
-    assert!((e_up - e_dn).abs() < 1e-5, "energy must be Z₂-symmetric: {e_up} vs {e_dn}");
+    assert!(
+        (e_up - e_dn).abs() < 1e-5,
+        "energy must be Z₂-symmetric: {e_up} vs {e_dn}"
+    );
 }
 
 // ── Metropolis dynamics ───────────────────────────────────────────────────────
@@ -68,7 +77,9 @@ fn energy_should_drop_over_many_steps() {
     let n = 16;
     let mut s = State::from_vec(
         // Frustrate the ring: alternating signs
-        (0..n).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect(),
+        (0..n)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+            .collect(),
     );
     let model = ring_ising(n);
     let p = Params::default_n(n);
@@ -79,8 +90,14 @@ fn energy_should_drop_over_many_steps() {
         step_discrete(&model, &mut s, &p, &mut rng);
     }
     let e1 = model.energy(&s);
-    assert!(e1 <= e0 + 1e-3, "energy should not increase long-run: {e1} > {e0}");
-    assert!(s.dissipated_j > 0.0, "at least some heat must have been shed");
+    assert!(
+        e1 <= e0 + 1e-3,
+        "energy should not increase long-run: {e1} > {e0}"
+    );
+    assert!(
+        s.dissipated_j > 0.0,
+        "at least some heat must have been shed"
+    );
 }
 
 #[test]
@@ -191,7 +208,12 @@ fn dissipation_monotonically_non_decreasing() {
     let mut rng = rng(44);
     let trace = anneal_discrete(&motif.model, &mut motif.state, &p, 2_000, 20, &mut rng);
     for w in trace.dissipation.windows(2) {
-        assert!(w[1] >= w[0], "dissipation must be non-decreasing: {} < {}", w[1], w[0]);
+        assert!(
+            w[1] >= w[0],
+            "dissipation must be non-decreasing: {} < {}",
+            w[1],
+            w[0]
+        );
     }
 }
 
@@ -230,7 +252,10 @@ fn overlap_with_self_is_one() {
     let s = State::ones(8);
     let pat = vec![1.0_f32; 8];
     let m = overlap(&s, &pat).unwrap();
-    assert!((m - 1.0).abs() < 1e-6, "overlap with self should be 1.0: {m}");
+    assert!(
+        (m - 1.0).abs() < 1e-6,
+        "overlap with self should be 1.0: {m}"
+    );
 }
 
 #[test]
@@ -264,7 +289,9 @@ fn binary_entropy_zero_for_pure_state() {
 #[test]
 fn hopfield_retrieves_stored_pattern() {
     let n = 20;
-    let pattern: Vec<f32> = (0..n).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+    let pattern: Vec<f32> = (0..n)
+        .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+        .collect();
     let motif = IsingMotif::hopfield(n, &[pattern.clone()]);
     let mut p = Params::default_n(n);
     p.beta = 10.0; // cold
@@ -282,5 +309,8 @@ fn hopfield_retrieves_stored_pattern() {
     }
 
     let m = overlap(&s, &pattern).unwrap().abs();
-    assert!(m > 0.7, "Hopfield net should retrieve stored pattern (overlap {m:.3} < 0.7)");
+    assert!(
+        m > 0.7,
+        "Hopfield net should retrieve stored pattern (overlap {m:.3} < 0.7)"
+    );
 }

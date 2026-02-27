@@ -192,7 +192,7 @@ RuVector isn't a database you add to your stack — it's the entire stack. Self-
 | 🐧 | **Kernel** | Linux + Docker + eBPF tools | A single `.rvf` file boots its own Linux kernel in 125 ms — eBPF accelerates hot paths |
 | 🗄️ | **Storage** | PostgreSQL + Redis + S3 | Vector store, graph database, key-value cache, and 230+ SQL functions built in |
 | 🔍 | **Search** | Pinecone, Weaviate, Qdrant | Self-learning HNSW — a GNN watches every query and improves results automatically |
-| 🔗 | **Graph** | Neo4j, Amazon Neptune | Full Cypher query engine with hyperedges, SPARQL, and 8 verified graph transformer modules |
+| 🔗 | **Graph** | Separate graph database | Neo4j-compatible Cypher, W3C SPARQL 1.1, hyperedges, and 8 verified graph transformer modules — built in |
 | 🤖 | **AI Runtime** | llama.cpp, vLLM, Ollama | Run GGUF models locally on your hardware — no cloud APIs, no per-query costs |
 | 🧠 | **ML Framework** | PyTorch, TensorFlow | 46 attention mechanisms, 8 verified graph transformer modules (physics, bio, manifold, temporal, economic), spiking neural networks, sparse inference, mincut-gated attention, hyperbolic embeddings, sublinear solvers, domain expansion, verified training, quantum coherence, coherence measurement |
 | 🌐 | **Coordination** | etcd, ZooKeeper, Consul | Raft consensus, multi-master replication, CRDT delta sync, auto-sharding |

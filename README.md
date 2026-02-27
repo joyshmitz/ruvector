@@ -397,63 +397,124 @@ See how RuVector stacks up against popular vector databases across 40+ features 
 <details>
 <summary>📊 Comparison with Other Vector Databases</summary>
 
-| Feature | RuVector | Pinecone | Qdrant | Milvus | ChromaDB |
-|---------|----------|----------|--------|--------|----------|
-| **Latency (p50)** | **61µs** | ~2ms | ~1ms | ~5ms | ~50ms |
-| **Memory (1M vec)** | 200MB* | 2GB | 1.5GB | 1GB | 3GB |
-| **Graph Queries** | ✅ Cypher | ❌ | ❌ | ❌ | ❌ |
-| **SPARQL/RDF** | ✅ W3C 1.1 | ❌ | ❌ | ❌ | ❌ |
-| **Hyperedges** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Dynamic Min-Cut** | ✅ n^0.12 | ❌ | ❌ | ❌ | ❌ |
-| **Sublinear Solvers** | ✅ 8 algorithms | ❌ | ❌ | ❌ | ❌ |
-| **O(log n) Graph Solve** | ✅ TRUE+BMSSP | ❌ | ❌ | ❌ | ❌ |
-| **Self-Learning (GNN)** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Runtime Adaptation (SONA)** | ✅ LoRA+EWC++ | ❌ | ❌ | ❌ | ❌ |
-| **AI Agent Routing** | ✅ Tiny Dancer | ❌ | ❌ | ❌ | ❌ |
-| **Attention Mechanisms** | ✅ 46 types | ❌ | ❌ | ❌ | ❌ |
-| **Coherence Gate** | ✅ Prime-Radiant | ❌ | ❌ | ❌ | ❌ |
-| **Hyperbolic Embeddings** | ✅ Poincaré+Lorentz | ❌ | ❌ | ❌ | ❌ |
-| **Local Embeddings** | ✅ 8+ models | ❌ | ❌ | ❌ | ❌ |
-| **PostgreSQL Extension** | ✅ 77+ functions | ❌ | ❌ | ❌ | ❌ |
-| **SIMD Optimization** | ✅ AVX-512/NEON | Partial | ✅ | ✅ | ❌ |
-| **Metadata Filtering** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Sparse Vectors** | ✅ BM25/TF-IDF | ✅ | ✅ | ✅ | ❌ |
-| **Raft Consensus** | ✅ | ❌ | ✅ | ❌ | ❌ |
-| **Multi-Master Replication** | ✅ | ❌ | ❌ | ✅ | ❌ |
-| **Auto-Sharding** | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **Auto-Compression** | ✅ 2-32x | ❌ | ❌ | ✅ | ❌ |
-| **Snapshots/Backups** | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **Browser/WASM** | ✅ WebGPU | ❌ | ❌ | ❌ | ❌ |
-| **Standalone Edge DB** | ✅ rvLite | ❌ | ❌ | ❌ | ❌ |
-| **LLM Runtime** | ✅ ruvllm | ❌ | ❌ | ❌ | ❌ |
-| **Pre-trained Models** | ✅ RuvLTRA (HF) | ❌ | ❌ | ❌ | ❌ |
-| **MCP Server** | ✅ mcp-gate | ❌ | ❌ | ❌ | ❌ |
-| **Self-Learning Hooks** | ✅ Q-learning+Neural+HNSW | ❌ | ❌ | ❌ | ❌ |
-| **Quantum Coherence** | ✅ ruQu | ❌ | ❌ | ❌ | ❌ |
-| **MinCut-Gated Attention** | ✅ 50% compute | ❌ | ❌ | ❌ | ❌ |
-| **FPGA Acceleration** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Local ONNX Embeddings** | ✅ 8+ models | ❌ | ❌ | ❌ | ❌ |
-| **Differentiable** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Multi-Tenancy** | ✅ Collections | ✅ | ✅ | ✅ | ✅ |
-| **DAG Workflows** | ✅ Self-learning | ❌ | ❌ | ❌ | ❌ |
-| **ReasoningBank** | ✅ Trajectory learning | ❌ | ❌ | ❌ | ❌ |
-| **Economy System** | ✅ CRDT tokenomics | ❌ | ❌ | ❌ | ❌ |
-| **Nervous System** | ✅ Event-driven | ❌ | ❌ | ❌ | ❌ |
-| **Cognitum Gate** | ✅ TileZero | ❌ | ❌ | ❌ | ❌ |
-| **SciPix OCR** | ✅ LaTeX/MathML | ❌ | ❌ | ❌ | ❌ |
-| **Spiking Neural Nets** | ✅ Neuromorphic | ❌ | ❌ | ❌ | ❌ |
-| **Node.js Native** | ✅ napi-rs | ❌ | ❌ | ❌ | ✅ |
-| **Burst Scaling** | ✅ 10-50x | ✅ | ❌ | ✅ | ❌ |
-| **Streaming API** | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **Cognitive Containers** | ✅ [RVF](./crates/rvf/README.md) | ❌ | ❌ | ❌ | ❌ |
-| **Self-Booting Kernel** | ✅ Linux microVM | ❌ | ❌ | ❌ | ❌ |
-| **eBPF Acceleration** | ✅ XDP/TC/socket | ❌ | ❌ | ❌ | ❌ |
-| **COW Branching** | ✅ Cluster-level | ❌ | ❌ | ❌ | ❌ |
-| **Witness Chains** | ✅ Tamper-evident | ❌ | ❌ | ❌ | ❌ |
-| **Post-Quantum Sigs** | ✅ ML-DSA-65 | ❌ | ❌ | ❌ | ❌ |
-| **Open Source** | ✅ MIT | ❌ | ✅ | ✅ | ✅ |
+Grouped comparison across 10 categories. RuVector is the only vector database that learns from usage, runs AI locally, and ships as a single self-booting file.
 
-*With PQ8 compression. Benchmarks on Apple M2 / Intel i7.
+**Performance & Storage**
+| Feature | RuVector | Pinecone | Qdrant | Milvus | ChromaDB | Weaviate |
+|---------|----------|----------|--------|--------|----------|----------|
+| Latency (p50) | **61 us** | ~2 ms | ~1 ms | ~5 ms | ~50 ms | ~5 ms |
+| Memory (1M vectors) | **200 MB*** | 2 GB | 1.5 GB | 1 GB | 3 GB | 1.5 GB |
+| SIMD acceleration | AVX-512, NEON | Partial | ✅ | ✅ | ❌ | Partial |
+| Auto-compression | 2-32x adaptive | ❌ | ❌ | ✅ | ❌ | PQ only |
+| Temporal tensor compression | 4-10x reuse | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Sparse vectors (BM25/TF-IDF) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+
+**Search & Query**
+| Feature | RuVector | Pinecone | Qdrant | Milvus | ChromaDB | Weaviate |
+|---------|----------|----------|--------|--------|----------|----------|
+| Vector similarity search | ✅ HNSW | ✅ | ✅ HNSW | ✅ HNSW | ✅ | ✅ HNSW |
+| Metadata filtering | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Graph queries (Cypher) | ✅ full engine | ❌ | ❌ | ❌ | ❌ | ❌ |
+| SPARQL/RDF (W3C 1.1) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Hyperedges (3+ node) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Hyperbolic embeddings | Poincare + Lorentz | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Multi-tenancy | ✅ collections | ✅ namespaces | ✅ | ✅ | ✅ | ✅ |
+
+**Self-Learning & AI** — features unique to RuVector
+| Feature | RuVector | All Others |
+|---------|----------|------------|
+| GNN on HNSW — search improves from usage | ✅ every query teaches the index | ❌ static index |
+| SONA runtime adaptation | ✅ LoRA + EWC++ auto-tuning | ❌ manual tuning |
+| 46 attention mechanisms | Flash, linear, graph, hyperbolic, mincut-gated | ❌ |
+| Semantic routing (Tiny Dancer) | FastGRNN neural agent routing | ❌ |
+| Sparse inference (PowerInfer-style) | 2-10x faster on edge devices | ❌ |
+| Domain expansion | Cross-domain transfer learning with bandits | ❌ |
+| Self-learning hooks | Q-learning, neural patterns, HNSW memory | ❌ |
+| ReasoningBank | Trajectory learning with verdict judgment | ❌ |
+
+**Local AI — no cloud APIs needed**
+| Feature | RuVector | Pinecone | Qdrant | Milvus | ChromaDB | Weaviate |
+|---------|----------|----------|--------|--------|----------|----------|
+| Built-in LLM runtime | ✅ ruvllm (GGUF) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Hardware acceleration | Metal, CUDA, ANE, WebGPU | N/A | N/A | GPU indexing | N/A | N/A |
+| Pre-trained models | [RuvLTRA](https://huggingface.co/ruv/ruvltra) (<10 ms) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Local ONNX embeddings | 8+ models, no API calls | ❌ | ❌ | ❌ | ❌ | text2vec modules |
+| MCP server for AI agents | ✅ mcp-gate | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+**Graph Transformers** — verified graph neural network modules
+| Feature | RuVector | All Others |
+|---------|----------|------------|
+| Proof-gated mutation | Every write requires a formal proof — bugs cannot corrupt | ❌ |
+| Sublinear attention | O(n log n) via LSH, PPR, spectral sparsification | ❌ |
+| Physics-informed layers | Hamiltonian dynamics, energy conserved by construction | ❌ |
+| Biological layers | Spiking, Hebbian/STDP, dendritic branching | ❌ |
+| Manifold geometry | Product manifolds S^n x H^m x R^k | ❌ |
+| Temporal-causal layers | Granger causality, continuous-time ODE | ❌ |
+| Economic layers | Nash equilibrium, Shapley attribution | ❌ |
+| Verified training | Certificates, delta-apply rollback, fail-closed | ❌ |
+
+**Math & Solvers**
+| Feature | RuVector | Pinecone | Qdrant | Milvus | ChromaDB | Weaviate |
+|---------|----------|----------|--------|--------|----------|----------|
+| Sublinear solvers (8 algorithms) | O(log n) to O(sqrt(n)) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Dynamic min-cut | n^0.12 complexity | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Optimal transport distances | Wasserstein, Sinkhorn, KL | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Topological data analysis | Persistent homology, Betti numbers | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Coherence measurement | Prime Radiant sheaf Laplacian | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Quantum error correction | ruQu dynamic min-cut | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+**Distributed Systems**
+| Feature | RuVector | Pinecone | Qdrant | Milvus | ChromaDB | Weaviate |
+|---------|----------|----------|--------|--------|----------|----------|
+| Raft consensus | ✅ | ❌ managed | ✅ | ❌ | ❌ | ✅ |
+| Multi-master replication | ✅ vector clocks | ❌ | ❌ | ✅ | ❌ | ✅ |
+| Auto-sharding | ✅ consistent hashing | ✅ managed | ✅ | ✅ | ❌ | ✅ |
+| Delta consensus (CRDT) | ✅ causal ordering | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Burst scaling (10-50x) | ✅ | ✅ managed | ❌ | ✅ | ❌ | ❌ |
+| Snapshots / backups | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| Streaming API | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+
+**Cognitive Containers (RVF)** — single-file deployment unique to RuVector
+| Feature | RuVector | All Others |
+|---------|----------|------------|
+| Self-booting microservice | `.rvf` file boots in 125 ms with Linux kernel | ❌ requires server setup |
+| eBPF acceleration | XDP, socket filter, TC kernel data path | ❌ |
+| COW branching | Git-like — 1M vectors, 100 edits = ~2.5 MB branch | ❌ copy everything |
+| Witness chains | Tamper-evident hash-linked audit trail | ❌ manual logging |
+| Post-quantum signatures | ML-DSA-65, SLH-DSA-128s, Ed25519 | ❌ |
+| 25 segment types | VEC, INDEX, KERNEL, EBPF, WASM, COW_MAP, and 19 more | ❌ |
+
+**Platform & Deployment**
+| Feature | RuVector | Pinecone | Qdrant | Milvus | ChromaDB | Weaviate |
+|---------|----------|----------|--------|--------|----------|----------|
+| Browser / WASM | ✅ WebGPU, 58 KB | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Edge standalone | ✅ rvLite | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Node.js native | ✅ NAPI-RS | ❌ | Client only | Client only | ✅ | Client only |
+| PostgreSQL extension | ✅ 230+ SQL functions | ❌ | ❌ | ❌ | ❌ | ❌ |
+| iOS App Clip | ✅ QR → RVF in <15 MB | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Cloud deployment | Cloud Run, Kubernetes | Managed only | Docker, K8s | Docker, K8s | Docker | Docker, K8s |
+| FPGA acceleration | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Prometheus metrics | ✅ built-in | Dashboard | ✅ | ✅ | ❌ | ✅ |
+
+**Specialized Applications**
+| Feature | RuVector | All Others |
+|---------|----------|------------|
+| Genomics (rvDNA) | Variant calling, k-mer search in 12 ms, browser WASM | ❌ |
+| Neural trading | Kelly Criterion + LSTM-Transformer prediction | ❌ |
+| Scientific OCR (SciPix) | LaTeX/MathML extraction from papers | ❌ |
+| Spiking neural networks | Neuromorphic computing, BTSP learning | ❌ |
+| Bio-inspired nervous system | 5-layer adaptive system with EWC plasticity | ❌ |
+| DAG workflows | Self-learning directed graph execution | ❌ |
+| Cognitum Gate | Cognitive AI gateway with TileZero acceleration | ❌ |
+
+**Licensing & Cost**
+| | RuVector | Pinecone | Qdrant | Milvus | ChromaDB | Weaviate |
+|---|----------|----------|--------|--------|----------|----------|
+| License | MIT (free forever) | Proprietary | Apache 2.0 | Apache 2.0 | Apache 2.0 | BSD-3 |
+| Self-hosted | ✅ | ❌ managed only | ✅ | ✅ | ✅ | ✅ |
+| Pricing model | Free | Per-vector/query | Free + Cloud | Free + managed | Free + Cloud | Free + Cloud |
+
+\* Memory with PQ8 compression. Benchmarks on Apple M2 / Intel i7.
 
 </details>
 

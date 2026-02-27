@@ -180,11 +180,15 @@ User Query → [SONA Engine] → Model Response → User Feedback
 
 </details>
 
-### Built by rUv — Powering Cognitum
+### Built by rUv — Powering the World's First Agentic Chip
 
-RuVector is created by [rUv](https://ruv.io) and is the core intelligence layer behind [Cognitum](https://cognitum.one) — the world's first agentic processing unit and **CES 2026 Innovation Awards Honoree**. Cognitum embeds RuVector's self-learning HNSW search, spiking neural networks, WASM micro-agents, and coherence gates directly into purpose-built hardware: 7 compute tiles running always-on agents at ~5 uW per inference with sub-millisecond response times and less than 15W total power.
+RuVector is created by [rUv](https://ruv.io) and powers [Cognitum](https://cognitum.one), a **CES 2026 Innovation Awards Honoree** — the world's first hardware designed specifically for AI agents.
 
-Where traditional edge devices run static models and burn watts continuously, Cognitum uses RuVector's event-driven architecture to stay aware without staying busy — reacting only when reality demands it. The same software stack that powers the Cognitum v0 hardware appliance is available here as open-source Rust crates, WASM modules, and npm packages. Everything in this repo runs on your existing hardware today.
+**Cognitum v0 — The Agentic Appliance** is a small device with 7 compute tiles that runs thousands of AI agents simultaneously on less power than a laptop charger (<15W). Instead of burning energy constantly like a GPU, it stays quiet and only wakes up when something important happens — like a nervous system, not a brain. It responds in under a millisecond and costs 500x less per decision than cloud AI.
+
+**Cognitum v1 — The Agentic Chip** takes the same idea and puts it on a single 256-core custom chip. It scales from idle to 8 GHz burst speed on demand, moves data at 2 TB/second between cores, and includes built-in encryption and security on every core.
+
+Both run RuVector as their software brain — the same self-learning search, spiking neural networks, and AI agent coordination you see in this repo. Everything here is open source and runs on your existing hardware today.
 
 ### A Complete AI Operating System
 

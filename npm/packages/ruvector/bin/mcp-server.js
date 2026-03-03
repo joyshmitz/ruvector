@@ -363,7 +363,7 @@ class Intelligence {
 const server = new Server(
   {
     name: 'ruvector',
-    version: '0.2.5',
+    version: '0.2.6',
   },
   {
     capabilities: {
@@ -3831,7 +3831,7 @@ async function main() {
           transport: 'sse',
           sessions: sessions.size,
           tools: 91,
-          version: '0.2.5'
+          version: '0.2.6'
         }));
 
       } else {

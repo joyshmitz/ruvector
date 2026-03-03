@@ -1,6 +1,6 @@
 {
   "name": "ruvector",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "High-performance vector database for Node.js with automatic native/WASM fallback",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -80,12 +80,10 @@
     "typescript": "^5.3.3"
   },
   "peerDependencies": {
-    "@ruvector/pi-brain": ">=0.1.0",
     "@ruvector/ruvllm": ">=2.0.0",
     "@ruvector/router": ">=0.1.0"
   },
   "peerDependenciesMeta": {
-    "@ruvector/pi-brain": { "optional": true },
     "@ruvector/ruvllm": { "optional": true },
     "@ruvector/router": { "optional": true }
   },

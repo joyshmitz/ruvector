@@ -770,6 +770,631 @@ pub fn dequantize_tensor_2bit(
 }
 
 // ============================================================================
+// High-Performance Quantization (Target: >1 GB/s)
+// ============================================================================
+
+/// High-performance 3-bit quantization into pre-allocated buffer.
+///
+/// This function eliminates Vec allocations and uses aggressive optimizations:
+/// - Pre-allocated output buffer (no allocations in hot path)
+/// - Precomputed step size and inverse step
+/// - Unsafe bounds checking elimination in inner loops
+/// - Cache-friendly sequential memory access
+///
+/// # Safety
+///
+/// Caller must ensure output buffer has correct size: `(weights.len() / 8) * 3` bytes.
+///
+/// # Performance
+///
+/// Target: >1 GB/s throughput on modern CPUs.
+///
+/// # Arguments
+///
+/// * `weights` - Input f32 weights (length must be multiple of 8)
+/// * `step` - Quantization step size (alpha * pi / k)
+/// * `output` - Pre-allocated output buffer for packed 3-bit values
+///
+/// # Returns
+///
+/// Number of bytes written to output.
+pub fn quantize_3bit_fast(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    debug_assert!(weights.len() % PI3_BLOCK_WEIGHTS == 0, "Weight length must be multiple of 8");
+
+    let num_blocks = weights.len() / PI3_BLOCK_WEIGHTS;
+    let output_bytes = num_blocks * PI3_BLOCK_BYTES;
+
+    debug_assert!(output.len() >= output_bytes, "Output buffer too small");
+
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    // Precompute inverse step for multiplication instead of division
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+
+    // SAFETY: We've validated buffer sizes above
+    unsafe {
+        quantize_3bit_inner(weights, inv_step, output, num_blocks);
+    }
+
+    output_bytes
+}
+
+/// Inner quantization loop with unsafe optimizations.
+///
+/// # Safety
+///
+/// - weights must have at least num_blocks * 8 elements
+/// - output must have at least num_blocks * 3 bytes
+#[inline(always)]
+unsafe fn quantize_3bit_inner(
+    weights: &[f32],
+    inv_step: f32,
+    output: &mut [u8],
+    num_blocks: usize,
+) {
+    let weights_ptr = weights.as_ptr();
+    let output_ptr = output.as_mut_ptr();
+
+    for block in 0..num_blocks {
+        let w_offset = block * 8;
+        let o_offset = block * 3;
+
+        // Load and quantize 8 values
+        let mut combined: u32 = 0;
+
+        for i in 0..8 {
+            let w = *weights_ptr.add(w_offset + i);
+
+            // Quantize: q = round(w * inv_step)
+            let q = (w * inv_step).round() as i32;
+
+            // Clamp to 3-bit signed range [-4, 3]
+            let clamped = q.clamp(-4, 3);
+
+            // Convert to unsigned [0, 7] and pack
+            let unsigned = (clamped + 4) as u32;
+            combined |= (unsigned & 0x7) << (i * 3);
+        }
+
+        // Store 3 bytes
+        *output_ptr.add(o_offset) = (combined & 0xFF) as u8;
+        *output_ptr.add(o_offset + 1) = ((combined >> 8) & 0xFF) as u8;
+        *output_ptr.add(o_offset + 2) = ((combined >> 16) & 0xFF) as u8;
+    }
+}
+
+/// High-performance 2-bit quantization into pre-allocated buffer.
+///
+/// Similar to `quantize_3bit_fast` but for 2-bit quantization.
+///
+/// # Arguments
+///
+/// * `weights` - Input f32 weights (length must be multiple of 4)
+/// * `step` - Quantization step size
+/// * `output` - Pre-allocated output buffer (1 byte per 4 weights)
+///
+/// # Returns
+///
+/// Number of bytes written to output.
+pub fn quantize_2bit_fast(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    debug_assert!(weights.len() % PI2_BLOCK_WEIGHTS == 0, "Weight length must be multiple of 4");
+
+    let num_blocks = weights.len() / PI2_BLOCK_WEIGHTS;
+
+    debug_assert!(output.len() >= num_blocks, "Output buffer too small");
+
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+
+    // SAFETY: Buffer sizes validated above
+    unsafe {
+        quantize_2bit_inner(weights, inv_step, output, num_blocks);
+    }
+
+    num_blocks
+}
+
+/// Inner 2-bit quantization loop with unsafe optimizations.
+#[inline(always)]
+unsafe fn quantize_2bit_inner(
+    weights: &[f32],
+    inv_step: f32,
+    output: &mut [u8],
+    num_blocks: usize,
+) {
+    let weights_ptr = weights.as_ptr();
+    let output_ptr = output.as_mut_ptr();
+
+    for block in 0..num_blocks {
+        let w_offset = block * 4;
+
+        // Load and quantize 4 values
+        let w0 = *weights_ptr.add(w_offset);
+        let w1 = *weights_ptr.add(w_offset + 1);
+        let w2 = *weights_ptr.add(w_offset + 2);
+        let w3 = *weights_ptr.add(w_offset + 3);
+
+        // Quantize and clamp to 2-bit signed range [-2, 1]
+        let q0 = ((w0 * inv_step).round() as i32).clamp(-2, 1);
+        let q1 = ((w1 * inv_step).round() as i32).clamp(-2, 1);
+        let q2 = ((w2 * inv_step).round() as i32).clamp(-2, 1);
+        let q3 = ((w3 * inv_step).round() as i32).clamp(-2, 1);
+
+        // Convert to unsigned [0, 3] and pack into single byte
+        let packed = ((q0 + 2) as u8 & 0x03)
+            | (((q1 + 2) as u8 & 0x03) << 2)
+            | (((q2 + 2) as u8 & 0x03) << 4)
+            | (((q3 + 2) as u8 & 0x03) << 6);
+
+        *output_ptr.add(block) = packed;
+    }
+}
+
+// ============================================================================
+// SIMD Quantization Kernels (ARM NEON)
+// ============================================================================
+
+/// ARM NEON optimized 3-bit quantization.
+///
+/// Processes 8 values at a time using NEON SIMD instructions.
+/// Falls back to scalar for non-aligned remainders.
+///
+/// # Safety
+///
+/// - Requires aarch64 architecture with NEON support
+/// - weights.len() must be multiple of 8
+/// - output must have at least (weights.len() / 8) * 3 bytes
+///
+/// # Performance
+///
+/// Target: >1 GB/s throughput on Apple Silicon.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+pub unsafe fn quantize_3bit_neon(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    use core::arch::aarch64::*;
+
+    let num_blocks = weights.len() / 8;
+    let output_bytes = num_blocks * 3;
+
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+    let inv_step_vec = vdupq_n_f32(inv_step);
+
+    // Constants for clamping: we'll clamp after rounding
+    let min_val = vdupq_n_s32(-4);
+    let max_val = vdupq_n_s32(3);
+    let offset = vdupq_n_s32(4);
+
+    let weights_ptr = weights.as_ptr();
+    let output_ptr = output.as_mut_ptr();
+
+    // Process 4 blocks (32 values) at a time for better throughput
+    let simd_iterations = num_blocks / 4;
+    let mut block = 0usize;
+
+    while block < simd_iterations * 4 {
+        for inner in 0..4 {
+            let b = block + inner;
+            let w_offset = b * 8;
+            let o_offset = b * 3;
+
+            // Load 8 floats as two 4-float vectors
+            let w_lo = vld1q_f32(weights_ptr.add(w_offset));
+            let w_hi = vld1q_f32(weights_ptr.add(w_offset + 4));
+
+            // Multiply by inverse step
+            let scaled_lo = vmulq_f32(w_lo, inv_step_vec);
+            let scaled_hi = vmulq_f32(w_hi, inv_step_vec);
+
+            // Round to nearest integer (NEON doesn't have vrndaq, use vrndnq)
+            let rounded_lo = vrndnq_f32(scaled_lo);
+            let rounded_hi = vrndnq_f32(scaled_hi);
+
+            // Convert to i32
+            let q_lo = vcvtq_s32_f32(rounded_lo);
+            let q_hi = vcvtq_s32_f32(rounded_hi);
+
+            // Clamp to [-4, 3]
+            let clamped_lo = vminq_s32(vmaxq_s32(q_lo, min_val), max_val);
+            let clamped_hi = vminq_s32(vmaxq_s32(q_hi, min_val), max_val);
+
+            // Add offset to get unsigned [0, 7]
+            let unsigned_lo = vaddq_s32(clamped_lo, offset);
+            let unsigned_hi = vaddq_s32(clamped_hi, offset);
+
+            // Extract values and pack
+            // We need to extract 8 values and pack into 3 bytes
+            let mut vals = [0u32; 8];
+            vst1q_s32(vals.as_mut_ptr() as *mut i32, unsigned_lo);
+            vst1q_s32(vals.as_mut_ptr().add(4) as *mut i32, unsigned_hi);
+
+            // Pack 8 x 3-bit values into 24 bits
+            let mut combined: u32 = 0;
+            for i in 0..8 {
+                combined |= (vals[i] & 0x7) << (i * 3);
+            }
+
+            *output_ptr.add(o_offset) = (combined & 0xFF) as u8;
+            *output_ptr.add(o_offset + 1) = ((combined >> 8) & 0xFF) as u8;
+            *output_ptr.add(o_offset + 2) = ((combined >> 16) & 0xFF) as u8;
+        }
+
+        block += 4;
+    }
+
+    // Handle remaining blocks with scalar
+    while block < num_blocks {
+        let w_offset = block * 8;
+        let o_offset = block * 3;
+
+        let mut combined: u32 = 0;
+        for i in 0..8 {
+            let w = *weights_ptr.add(w_offset + i);
+            let q = (w * inv_step).round() as i32;
+            let clamped = q.clamp(-4, 3);
+            let unsigned = (clamped + 4) as u32;
+            combined |= (unsigned & 0x7) << (i * 3);
+        }
+
+        *output_ptr.add(o_offset) = (combined & 0xFF) as u8;
+        *output_ptr.add(o_offset + 1) = ((combined >> 8) & 0xFF) as u8;
+        *output_ptr.add(o_offset + 2) = ((combined >> 16) & 0xFF) as u8;
+
+        block += 1;
+    }
+
+    output_bytes
+}
+
+/// ARM NEON optimized 2-bit quantization.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+pub unsafe fn quantize_2bit_neon(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    use core::arch::aarch64::*;
+
+    let num_blocks = weights.len() / 4;
+
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+    let inv_step_vec = vdupq_n_f32(inv_step);
+    let min_val = vdupq_n_s32(-2);
+    let max_val = vdupq_n_s32(1);
+    let offset = vdupq_n_s32(2);
+
+    let weights_ptr = weights.as_ptr();
+    let output_ptr = output.as_mut_ptr();
+
+    // Process 4 blocks (16 values) at a time
+    let simd_iterations = num_blocks / 4;
+    let mut block = 0usize;
+
+    while block < simd_iterations * 4 {
+        // Load 16 values (4 blocks)
+        let w0 = vld1q_f32(weights_ptr.add(block * 4));
+        let w1 = vld1q_f32(weights_ptr.add((block + 1) * 4));
+        let w2 = vld1q_f32(weights_ptr.add((block + 2) * 4));
+        let w3 = vld1q_f32(weights_ptr.add((block + 3) * 4));
+
+        // Scale
+        let scaled0 = vmulq_f32(w0, inv_step_vec);
+        let scaled1 = vmulq_f32(w1, inv_step_vec);
+        let scaled2 = vmulq_f32(w2, inv_step_vec);
+        let scaled3 = vmulq_f32(w3, inv_step_vec);
+
+        // Round
+        let rounded0 = vrndnq_f32(scaled0);
+        let rounded1 = vrndnq_f32(scaled1);
+        let rounded2 = vrndnq_f32(scaled2);
+        let rounded3 = vrndnq_f32(scaled3);
+
+        // Convert and clamp
+        let q0 = vminq_s32(vmaxq_s32(vcvtq_s32_f32(rounded0), min_val), max_val);
+        let q1 = vminq_s32(vmaxq_s32(vcvtq_s32_f32(rounded1), min_val), max_val);
+        let q2 = vminq_s32(vmaxq_s32(vcvtq_s32_f32(rounded2), min_val), max_val);
+        let q3 = vminq_s32(vmaxq_s32(vcvtq_s32_f32(rounded3), min_val), max_val);
+
+        // Add offset
+        let u0 = vaddq_s32(q0, offset);
+        let u1 = vaddq_s32(q1, offset);
+        let u2 = vaddq_s32(q2, offset);
+        let u3 = vaddq_s32(q3, offset);
+
+        // Extract and pack each block
+        let mut vals0 = [0i32; 4];
+        let mut vals1 = [0i32; 4];
+        let mut vals2 = [0i32; 4];
+        let mut vals3 = [0i32; 4];
+
+        vst1q_s32(vals0.as_mut_ptr(), u0);
+        vst1q_s32(vals1.as_mut_ptr(), u1);
+        vst1q_s32(vals2.as_mut_ptr(), u2);
+        vst1q_s32(vals3.as_mut_ptr(), u3);
+
+        *output_ptr.add(block) = ((vals0[0] as u8) & 0x03)
+            | (((vals0[1] as u8) & 0x03) << 2)
+            | (((vals0[2] as u8) & 0x03) << 4)
+            | (((vals0[3] as u8) & 0x03) << 6);
+
+        *output_ptr.add(block + 1) = ((vals1[0] as u8) & 0x03)
+            | (((vals1[1] as u8) & 0x03) << 2)
+            | (((vals1[2] as u8) & 0x03) << 4)
+            | (((vals1[3] as u8) & 0x03) << 6);
+
+        *output_ptr.add(block + 2) = ((vals2[0] as u8) & 0x03)
+            | (((vals2[1] as u8) & 0x03) << 2)
+            | (((vals2[2] as u8) & 0x03) << 4)
+            | (((vals2[3] as u8) & 0x03) << 6);
+
+        *output_ptr.add(block + 3) = ((vals3[0] as u8) & 0x03)
+            | (((vals3[1] as u8) & 0x03) << 2)
+            | (((vals3[2] as u8) & 0x03) << 4)
+            | (((vals3[3] as u8) & 0x03) << 6);
+
+        block += 4;
+    }
+
+    // Handle remaining blocks
+    while block < num_blocks {
+        let w_offset = block * 4;
+
+        let w0 = *weights_ptr.add(w_offset);
+        let w1 = *weights_ptr.add(w_offset + 1);
+        let w2 = *weights_ptr.add(w_offset + 2);
+        let w3 = *weights_ptr.add(w_offset + 3);
+
+        let q0 = ((w0 * inv_step).round() as i32).clamp(-2, 1);
+        let q1 = ((w1 * inv_step).round() as i32).clamp(-2, 1);
+        let q2 = ((w2 * inv_step).round() as i32).clamp(-2, 1);
+        let q3 = ((w3 * inv_step).round() as i32).clamp(-2, 1);
+
+        *output_ptr.add(block) = ((q0 + 2) as u8 & 0x03)
+            | (((q1 + 2) as u8 & 0x03) << 2)
+            | (((q2 + 2) as u8 & 0x03) << 4)
+            | (((q3 + 2) as u8 & 0x03) << 6);
+
+        block += 1;
+    }
+
+    num_blocks
+}
+
+// ============================================================================
+// SIMD Quantization Kernels (x86_64 AVX2)
+// ============================================================================
+
+/// x86_64 AVX2 optimized 3-bit quantization.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn quantize_3bit_avx2(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    use core::arch::x86_64::*;
+
+    let num_blocks = weights.len() / 8;
+    let output_bytes = num_blocks * 3;
+
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+    let inv_step_vec = _mm256_set1_ps(inv_step);
+    let min_val = _mm256_set1_epi32(-4);
+    let max_val = _mm256_set1_epi32(3);
+    let offset = _mm256_set1_epi32(4);
+
+    let weights_ptr = weights.as_ptr();
+    let output_ptr = output.as_mut_ptr();
+
+    for block in 0..num_blocks {
+        let w_offset = block * 8;
+        let o_offset = block * 3;
+
+        // Load 8 floats
+        let w = _mm256_loadu_ps(weights_ptr.add(w_offset));
+
+        // Scale
+        let scaled = _mm256_mul_ps(w, inv_step_vec);
+
+        // Round (AVX doesn't have round-to-nearest-even by default)
+        let rounded = _mm256_round_ps(scaled, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+
+        // Convert to i32
+        let q = _mm256_cvtps_epi32(rounded);
+
+        // Clamp to [-4, 3]
+        let clamped = _mm256_min_epi32(_mm256_max_epi32(q, min_val), max_val);
+
+        // Add offset to get [0, 7]
+        let unsigned = _mm256_add_epi32(clamped, offset);
+
+        // Extract and pack
+        let mut vals = [0i32; 8];
+        _mm256_storeu_si256(vals.as_mut_ptr() as *mut __m256i, unsigned);
+
+        let mut combined: u32 = 0;
+        for i in 0..8 {
+            combined |= ((vals[i] as u32) & 0x7) << (i * 3);
+        }
+
+        *output_ptr.add(o_offset) = (combined & 0xFF) as u8;
+        *output_ptr.add(o_offset + 1) = ((combined >> 8) & 0xFF) as u8;
+        *output_ptr.add(o_offset + 2) = ((combined >> 16) & 0xFF) as u8;
+    }
+
+    output_bytes
+}
+
+/// x86_64 AVX2 optimized 2-bit quantization.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub unsafe fn quantize_2bit_avx2(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    use core::arch::x86_64::*;
+
+    let num_blocks = weights.len() / 4;
+
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+    let inv_step_vec = _mm_set1_ps(inv_step);
+    let min_val = _mm_set1_epi32(-2);
+    let max_val = _mm_set1_epi32(1);
+    let offset = _mm_set1_epi32(2);
+
+    let weights_ptr = weights.as_ptr();
+    let output_ptr = output.as_mut_ptr();
+
+    for block in 0..num_blocks {
+        let w_offset = block * 4;
+
+        // Load 4 floats
+        let w = _mm_loadu_ps(weights_ptr.add(w_offset));
+
+        // Scale and round
+        let scaled = _mm_mul_ps(w, inv_step_vec);
+        let rounded = _mm_round_ps(scaled, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+
+        // Convert, clamp, offset
+        let q = _mm_cvtps_epi32(rounded);
+        let clamped = _mm_min_epi32(_mm_max_epi32(q, min_val), max_val);
+        let unsigned = _mm_add_epi32(clamped, offset);
+
+        // Extract and pack
+        let mut vals = [0i32; 4];
+        _mm_storeu_si128(vals.as_mut_ptr() as *mut __m128i, unsigned);
+
+        *output_ptr.add(block) = ((vals[0] as u8) & 0x03)
+            | (((vals[1] as u8) & 0x03) << 2)
+            | (((vals[2] as u8) & 0x03) << 4)
+            | (((vals[3] as u8) & 0x03) << 6);
+    }
+
+    num_blocks
+}
+
+// ============================================================================
+// Runtime Dispatch for Quantization
+// ============================================================================
+
+/// High-performance quantization with automatic SIMD dispatch.
+///
+/// Selects the best available kernel at runtime:
+/// - ARM NEON on aarch64
+/// - AVX2 on x86_64 (with runtime feature detection)
+/// - Optimized scalar fallback
+///
+/// # Arguments
+///
+/// * `weights` - Input f32 weights (must be multiple of 8 for 3-bit)
+/// * `step` - Quantization step size
+/// * `output` - Pre-allocated output buffer
+///
+/// # Returns
+///
+/// Number of bytes written.
+pub fn quantize_3bit(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: aarch64 guarantees NEON support
+        unsafe {
+            return quantize_3bit_neon(weights, step, output);
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            // SAFETY: AVX2 detected at runtime
+            unsafe {
+                return quantize_3bit_avx2(weights, step, output);
+            }
+        }
+    }
+
+    // Fallback to optimized scalar
+    quantize_3bit_fast(weights, step, output)
+}
+
+/// High-performance 2-bit quantization with automatic SIMD dispatch.
+pub fn quantize_2bit(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: aarch64 guarantees NEON support
+        unsafe {
+            return quantize_2bit_neon(weights, step, output);
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            // SAFETY: AVX2 detected at runtime
+            unsafe {
+                return quantize_2bit_avx2(weights, step, output);
+            }
+        }
+    }
+
+    // Fallback to optimized scalar
+    quantize_2bit_fast(weights, step, output)
+}
+
+/// Get the name of the quantization kernel that will be used.
+pub fn quantize_kernel_name() -> &'static str {
+    #[cfg(target_arch = "aarch64")]
+    {
+        return "neon";
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return "avx2";
+        }
+    }
+
+    "scalar"
+}
+
+// ============================================================================
+// Batch Quantization with Pre-allocated Buffers
+// ============================================================================
+
+/// Batch quantize multiple tensors into pre-allocated buffers.
+///
+/// This is the highest-performance API for bulk quantization operations.
+/// All memory is pre-allocated and reused across batches.
+///
+/// # Arguments
+///
+/// * `tensors` - Slice of (weights, output_buffer) tuples
+/// * `step` - Quantization step size
+///
+/// # Returns
+///
+/// Total bytes written across all tensors.
+pub fn batch_quantize_3bit(tensors: &mut [(&[f32], &mut [u8])], step: f32) -> usize {
+    let mut total_bytes = 0;
+
+    for (weights, output) in tensors.iter_mut() {
+        total_bytes += quantize_3bit(weights, step, output);
+    }
+
+    total_bytes
+}
+
+// ============================================================================
 // Quality Metrics
 // ============================================================================
 

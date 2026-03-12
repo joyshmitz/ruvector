@@ -22,7 +22,8 @@
 //!
 //! SIMD kernels provide high-performance dequantization:
 //! - ARM NEON: >10 GB/s on Apple Silicon
-//! - x86_64 AVX2: >8 GB/s on modern Intel/AMD
+//! - x86_64 AVX-512: >12 GB/s on Intel Ice Lake+ / AMD Zen4+
+//! - x86_64 AVX2: >8 GB/s on modern Intel/AMD (fallback)
 //!
 //! ## Incoherence Processing (ADR-090 Phase 3)
 //!
@@ -117,11 +118,13 @@ pub use pi_quant_simd::{
     // Runtime dispatch (selects best kernel)
     pi_dequantize,
     pi_dequantize_kernel_name,
+    pi_quantize,
+    pi_quantize_kernel_name,
     // Scalar reference (always available)
     pi_dequantize_scalar,
+    pi_quantize_scalar,
     // Utility functions
     extract_pi3_value,
-    pi_quantize_scalar,
     pi_quantize_value,
     pi_scale,
     pi_scale_adaptive,
@@ -133,7 +136,24 @@ pub use pi_quant_simd::{
 pub use pi_quant_simd::pi_dequantize_neon;
 
 #[cfg(target_arch = "x86_64")]
-pub use pi_quant_simd::pi_dequantize_avx2;
+pub use pi_quant_simd::{pi_dequantize_avx2, pi_dequantize_avx512, pi_quantize_avx512};
+
+// High-performance quantization (ADR-090 >1 GB/s target)
+pub use pi_quant::{
+    batch_quantize_3bit,
+    quantize_2bit,
+    quantize_2bit_fast,
+    quantize_3bit,
+    quantize_3bit_fast,
+    quantize_kernel_name,
+};
+
+// Architecture-specific quantization kernels
+#[cfg(target_arch = "aarch64")]
+pub use pi_quant::{quantize_2bit_neon, quantize_3bit_neon};
+
+#[cfg(target_arch = "x86_64")]
+pub use pi_quant::{quantize_2bit_avx2, quantize_3bit_avx2};
 
 // Hadamard transform (ADR-090 Phase 3)
 pub use hadamard::{

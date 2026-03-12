@@ -570,7 +570,7 @@ fn random_packed_3bit(num_weights: usize) -> Vec<u8> {
 // Benchmarks
 // ============================================================================
 
-/// Benchmark: Pi-Quantization 3-bit throughput
+/// Benchmark: Pi-Quantization 3-bit throughput (original implementation)
 /// Target: >1 GB/s
 fn bench_pi_quantize_3bit(c: &mut Criterion) {
     let mut group = c.benchmark_group("pi_quantize_3bit");
@@ -592,6 +592,599 @@ fn bench_pi_quantize_3bit(c: &mut Criterion) {
                     blocks.push(black_box(quantizer.quantize_block_3bit(&arr)));
                 }
                 blocks
+            })
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
+// NEW: High-Performance Quantization Benchmarks (>1 GB/s Target)
+// ============================================================================
+
+/// Optimized scalar 3-bit quantization with pre-allocated buffer
+fn quantize_3bit_fast(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    let num_blocks = weights.len() / 8;
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+
+    unsafe {
+        let weights_ptr = weights.as_ptr();
+        let output_ptr = output.as_mut_ptr();
+
+        for block in 0..num_blocks {
+            let w_offset = block * 8;
+            let o_offset = block * 3;
+
+            let mut combined: u32 = 0;
+            for i in 0..8 {
+                let w = *weights_ptr.add(w_offset + i);
+                let q = (w * inv_step).round() as i32;
+                let clamped = q.clamp(-4, 3);
+                let unsigned = (clamped + 4) as u32;
+                combined |= (unsigned & 0x7) << (i * 3);
+            }
+
+            *output_ptr.add(o_offset) = (combined & 0xFF) as u8;
+            *output_ptr.add(o_offset + 1) = ((combined >> 8) & 0xFF) as u8;
+            *output_ptr.add(o_offset + 2) = ((combined >> 16) & 0xFF) as u8;
+        }
+    }
+
+    num_blocks * 3
+}
+
+/// Optimized scalar 2-bit quantization with pre-allocated buffer
+fn quantize_2bit_fast(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    let num_blocks = weights.len() / 4;
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+
+    unsafe {
+        let weights_ptr = weights.as_ptr();
+        let output_ptr = output.as_mut_ptr();
+
+        for block in 0..num_blocks {
+            let w_offset = block * 4;
+
+            let w0 = *weights_ptr.add(w_offset);
+            let w1 = *weights_ptr.add(w_offset + 1);
+            let w2 = *weights_ptr.add(w_offset + 2);
+            let w3 = *weights_ptr.add(w_offset + 3);
+
+            let q0 = ((w0 * inv_step).round() as i32).clamp(-2, 1);
+            let q1 = ((w1 * inv_step).round() as i32).clamp(-2, 1);
+            let q2 = ((w2 * inv_step).round() as i32).clamp(-2, 1);
+            let q3 = ((w3 * inv_step).round() as i32).clamp(-2, 1);
+
+            *output_ptr.add(block) = ((q0 + 2) as u8 & 0x03)
+                | (((q1 + 2) as u8 & 0x03) << 2)
+                | (((q2 + 2) as u8 & 0x03) << 4)
+                | (((q3 + 2) as u8 & 0x03) << 6);
+        }
+    }
+
+    num_blocks
+}
+
+/// NEON 3-bit quantization
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn quantize_3bit_neon(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    use core::arch::aarch64::*;
+
+    let num_blocks = weights.len() / 8;
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+    let inv_step_vec = vdupq_n_f32(inv_step);
+    let min_val = vdupq_n_s32(-4);
+    let max_val = vdupq_n_s32(3);
+    let offset = vdupq_n_s32(4);
+
+    let weights_ptr = weights.as_ptr();
+    let output_ptr = output.as_mut_ptr();
+
+    let simd_iterations = num_blocks / 4;
+    let mut block = 0usize;
+
+    while block < simd_iterations * 4 {
+        for inner in 0..4 {
+            let b = block + inner;
+            let w_offset = b * 8;
+            let o_offset = b * 3;
+
+            let w_lo = vld1q_f32(weights_ptr.add(w_offset));
+            let w_hi = vld1q_f32(weights_ptr.add(w_offset + 4));
+
+            let scaled_lo = vmulq_f32(w_lo, inv_step_vec);
+            let scaled_hi = vmulq_f32(w_hi, inv_step_vec);
+
+            let rounded_lo = vrndnq_f32(scaled_lo);
+            let rounded_hi = vrndnq_f32(scaled_hi);
+
+            let q_lo = vcvtq_s32_f32(rounded_lo);
+            let q_hi = vcvtq_s32_f32(rounded_hi);
+
+            let clamped_lo = vminq_s32(vmaxq_s32(q_lo, min_val), max_val);
+            let clamped_hi = vminq_s32(vmaxq_s32(q_hi, min_val), max_val);
+
+            let unsigned_lo = vaddq_s32(clamped_lo, offset);
+            let unsigned_hi = vaddq_s32(clamped_hi, offset);
+
+            let mut vals = [0u32; 8];
+            vst1q_s32(vals.as_mut_ptr() as *mut i32, unsigned_lo);
+            vst1q_s32(vals.as_mut_ptr().add(4) as *mut i32, unsigned_hi);
+
+            let mut combined: u32 = 0;
+            for i in 0..8 {
+                combined |= (vals[i] & 0x7) << (i * 3);
+            }
+
+            *output_ptr.add(o_offset) = (combined & 0xFF) as u8;
+            *output_ptr.add(o_offset + 1) = ((combined >> 8) & 0xFF) as u8;
+            *output_ptr.add(o_offset + 2) = ((combined >> 16) & 0xFF) as u8;
+        }
+        block += 4;
+    }
+
+    while block < num_blocks {
+        let w_offset = block * 8;
+        let o_offset = block * 3;
+
+        let mut combined: u32 = 0;
+        for i in 0..8 {
+            let w = *weights_ptr.add(w_offset + i);
+            let q = (w * inv_step).round() as i32;
+            let clamped = q.clamp(-4, 3);
+            let unsigned = (clamped + 4) as u32;
+            combined |= (unsigned & 0x7) << (i * 3);
+        }
+
+        *output_ptr.add(o_offset) = (combined & 0xFF) as u8;
+        *output_ptr.add(o_offset + 1) = ((combined >> 8) & 0xFF) as u8;
+        *output_ptr.add(o_offset + 2) = ((combined >> 16) & 0xFF) as u8;
+
+        block += 1;
+    }
+
+    num_blocks * 3
+}
+
+/// NEON 2-bit quantization
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn quantize_2bit_neon(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    use core::arch::aarch64::*;
+
+    let num_blocks = weights.len() / 4;
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+    let inv_step_vec = vdupq_n_f32(inv_step);
+    let min_val = vdupq_n_s32(-2);
+    let max_val = vdupq_n_s32(1);
+    let offset = vdupq_n_s32(2);
+
+    let weights_ptr = weights.as_ptr();
+    let output_ptr = output.as_mut_ptr();
+
+    let simd_iterations = num_blocks / 4;
+    let mut block = 0usize;
+
+    while block < simd_iterations * 4 {
+        let w0 = vld1q_f32(weights_ptr.add(block * 4));
+        let w1 = vld1q_f32(weights_ptr.add((block + 1) * 4));
+        let w2 = vld1q_f32(weights_ptr.add((block + 2) * 4));
+        let w3 = vld1q_f32(weights_ptr.add((block + 3) * 4));
+
+        let scaled0 = vmulq_f32(w0, inv_step_vec);
+        let scaled1 = vmulq_f32(w1, inv_step_vec);
+        let scaled2 = vmulq_f32(w2, inv_step_vec);
+        let scaled3 = vmulq_f32(w3, inv_step_vec);
+
+        let rounded0 = vrndnq_f32(scaled0);
+        let rounded1 = vrndnq_f32(scaled1);
+        let rounded2 = vrndnq_f32(scaled2);
+        let rounded3 = vrndnq_f32(scaled3);
+
+        let q0 = vminq_s32(vmaxq_s32(vcvtq_s32_f32(rounded0), min_val), max_val);
+        let q1 = vminq_s32(vmaxq_s32(vcvtq_s32_f32(rounded1), min_val), max_val);
+        let q2 = vminq_s32(vmaxq_s32(vcvtq_s32_f32(rounded2), min_val), max_val);
+        let q3 = vminq_s32(vmaxq_s32(vcvtq_s32_f32(rounded3), min_val), max_val);
+
+        let u0 = vaddq_s32(q0, offset);
+        let u1 = vaddq_s32(q1, offset);
+        let u2 = vaddq_s32(q2, offset);
+        let u3 = vaddq_s32(q3, offset);
+
+        let mut vals0 = [0i32; 4];
+        let mut vals1 = [0i32; 4];
+        let mut vals2 = [0i32; 4];
+        let mut vals3 = [0i32; 4];
+
+        vst1q_s32(vals0.as_mut_ptr(), u0);
+        vst1q_s32(vals1.as_mut_ptr(), u1);
+        vst1q_s32(vals2.as_mut_ptr(), u2);
+        vst1q_s32(vals3.as_mut_ptr(), u3);
+
+        *output_ptr.add(block) = ((vals0[0] as u8) & 0x03)
+            | (((vals0[1] as u8) & 0x03) << 2)
+            | (((vals0[2] as u8) & 0x03) << 4)
+            | (((vals0[3] as u8) & 0x03) << 6);
+
+        *output_ptr.add(block + 1) = ((vals1[0] as u8) & 0x03)
+            | (((vals1[1] as u8) & 0x03) << 2)
+            | (((vals1[2] as u8) & 0x03) << 4)
+            | (((vals1[3] as u8) & 0x03) << 6);
+
+        *output_ptr.add(block + 2) = ((vals2[0] as u8) & 0x03)
+            | (((vals2[1] as u8) & 0x03) << 2)
+            | (((vals2[2] as u8) & 0x03) << 4)
+            | (((vals2[3] as u8) & 0x03) << 6);
+
+        *output_ptr.add(block + 3) = ((vals3[0] as u8) & 0x03)
+            | (((vals3[1] as u8) & 0x03) << 2)
+            | (((vals3[2] as u8) & 0x03) << 4)
+            | (((vals3[3] as u8) & 0x03) << 6);
+
+        block += 4;
+    }
+
+    while block < num_blocks {
+        let w_offset = block * 4;
+
+        let w0 = *weights_ptr.add(w_offset);
+        let w1 = *weights_ptr.add(w_offset + 1);
+        let w2 = *weights_ptr.add(w_offset + 2);
+        let w3 = *weights_ptr.add(w_offset + 3);
+
+        let q0 = ((w0 * inv_step).round() as i32).clamp(-2, 1);
+        let q1 = ((w1 * inv_step).round() as i32).clamp(-2, 1);
+        let q2 = ((w2 * inv_step).round() as i32).clamp(-2, 1);
+        let q3 = ((w3 * inv_step).round() as i32).clamp(-2, 1);
+
+        *output_ptr.add(block) = ((q0 + 2) as u8 & 0x03)
+            | (((q1 + 2) as u8 & 0x03) << 2)
+            | (((q2 + 2) as u8 & 0x03) << 4)
+            | (((q3 + 2) as u8 & 0x03) << 6);
+
+        block += 1;
+    }
+
+    num_blocks
+}
+
+/// AVX2 3-bit quantization
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn quantize_3bit_avx2(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    use core::arch::x86_64::*;
+
+    let num_blocks = weights.len() / 8;
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+    let inv_step_vec = _mm256_set1_ps(inv_step);
+    let min_val = _mm256_set1_epi32(-4);
+    let max_val = _mm256_set1_epi32(3);
+    let offset = _mm256_set1_epi32(4);
+
+    let weights_ptr = weights.as_ptr();
+    let output_ptr = output.as_mut_ptr();
+
+    for block in 0..num_blocks {
+        let w_offset = block * 8;
+        let o_offset = block * 3;
+
+        let w = _mm256_loadu_ps(weights_ptr.add(w_offset));
+        let scaled = _mm256_mul_ps(w, inv_step_vec);
+        let rounded = _mm256_round_ps(scaled, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        let q = _mm256_cvtps_epi32(rounded);
+        let clamped = _mm256_min_epi32(_mm256_max_epi32(q, min_val), max_val);
+        let unsigned = _mm256_add_epi32(clamped, offset);
+
+        let mut vals = [0i32; 8];
+        _mm256_storeu_si256(vals.as_mut_ptr() as *mut __m256i, unsigned);
+
+        let mut combined: u32 = 0;
+        for i in 0..8 {
+            combined |= ((vals[i] as u32) & 0x7) << (i * 3);
+        }
+
+        *output_ptr.add(o_offset) = (combined & 0xFF) as u8;
+        *output_ptr.add(o_offset + 1) = ((combined >> 8) & 0xFF) as u8;
+        *output_ptr.add(o_offset + 2) = ((combined >> 16) & 0xFF) as u8;
+    }
+
+    num_blocks * 3
+}
+
+/// AVX2 2-bit quantization
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn quantize_2bit_avx2(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    use core::arch::x86_64::*;
+
+    let num_blocks = weights.len() / 4;
+    if num_blocks == 0 {
+        return 0;
+    }
+
+    let inv_step = if step.abs() > 1e-10 { 1.0 / step } else { 0.0 };
+    let inv_step_vec = _mm_set1_ps(inv_step);
+    let min_val = _mm_set1_epi32(-2);
+    let max_val = _mm_set1_epi32(1);
+    let offset = _mm_set1_epi32(2);
+
+    let weights_ptr = weights.as_ptr();
+    let output_ptr = output.as_mut_ptr();
+
+    for block in 0..num_blocks {
+        let w_offset = block * 4;
+
+        let w = _mm_loadu_ps(weights_ptr.add(w_offset));
+        let scaled = _mm_mul_ps(w, inv_step_vec);
+        let rounded = _mm_round_ps(scaled, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        let q = _mm_cvtps_epi32(rounded);
+        let clamped = _mm_min_epi32(_mm_max_epi32(q, min_val), max_val);
+        let unsigned = _mm_add_epi32(clamped, offset);
+
+        let mut vals = [0i32; 4];
+        _mm_storeu_si128(vals.as_mut_ptr() as *mut __m128i, unsigned);
+
+        *output_ptr.add(block) = ((vals[0] as u8) & 0x03)
+            | (((vals[1] as u8) & 0x03) << 2)
+            | (((vals[2] as u8) & 0x03) << 4)
+            | (((vals[3] as u8) & 0x03) << 6);
+    }
+
+    num_blocks
+}
+
+/// Dispatch to best quantization kernel
+fn quantize_3bit_dispatch(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        unsafe { return quantize_3bit_neon(weights, step, output); }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            unsafe { return quantize_3bit_avx2(weights, step, output); }
+        }
+    }
+
+    quantize_3bit_fast(weights, step, output)
+}
+
+fn quantize_2bit_dispatch(weights: &[f32], step: f32, output: &mut [u8]) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        unsafe { return quantize_2bit_neon(weights, step, output); }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            unsafe { return quantize_2bit_avx2(weights, step, output); }
+        }
+    }
+
+    quantize_2bit_fast(weights, step, output)
+}
+
+/// Benchmark: Optimized 3-bit quantization (scalar, pre-allocated)
+/// Target: >1 GB/s
+fn bench_pi_quantize_3bit_fast(c: &mut Criterion) {
+    let mut group = c.benchmark_group("pi_quantize_3bit_fast");
+    group.sample_size(100);
+
+    let step = PI / 4.0;
+
+    for &size in &[256, 4096, 4096 * 11008] {
+        let weights = random_weights(size);
+        let num_blocks = size / 8;
+        let output_bytes = num_blocks * 3;
+        let mut output = vec![0u8; output_bytes];
+
+        group.throughput(Throughput::Bytes(output_bytes as u64));
+        group.bench_with_input(BenchmarkId::new("size", size), &weights, |b, w| {
+            b.iter(|| {
+                quantize_3bit_fast(black_box(w), step, black_box(&mut output))
+            })
+        });
+    }
+
+    group.finish();
+}
+
+/// Benchmark: Optimized 2-bit quantization (scalar, pre-allocated)
+/// Target: >1 GB/s
+fn bench_pi_quantize_2bit_fast(c: &mut Criterion) {
+    let mut group = c.benchmark_group("pi_quantize_2bit_fast");
+    group.sample_size(100);
+
+    let step = PI / 4.0;
+
+    for &size in &[256, 4096, 4096 * 11008] {
+        let weights = random_weights(size);
+        let num_blocks = size / 4;
+        let mut output = vec![0u8; num_blocks];
+
+        group.throughput(Throughput::Bytes(num_blocks as u64));
+        group.bench_with_input(BenchmarkId::new("size", size), &weights, |b, w| {
+            b.iter(|| {
+                quantize_2bit_fast(black_box(w), step, black_box(&mut output))
+            })
+        });
+    }
+
+    group.finish();
+}
+
+/// Benchmark: SIMD dispatched 3-bit quantization
+/// Target: >1 GB/s
+fn bench_pi_quantize_3bit_simd(c: &mut Criterion) {
+    let mut group = c.benchmark_group("pi_quantize_3bit_simd");
+    group.sample_size(100);
+
+    let step = PI / 4.0;
+
+    for &size in &[256, 4096, 4096 * 11008] {
+        let weights = random_weights(size);
+        let num_blocks = size / 8;
+        let output_bytes = num_blocks * 3;
+        let mut output = vec![0u8; output_bytes];
+
+        group.throughput(Throughput::Bytes(output_bytes as u64));
+        group.bench_with_input(BenchmarkId::new("size", size), &weights, |b, w| {
+            b.iter(|| {
+                quantize_3bit_dispatch(black_box(w), step, black_box(&mut output))
+            })
+        });
+    }
+
+    group.finish();
+}
+
+/// Benchmark: SIMD dispatched 2-bit quantization
+/// Target: >1 GB/s
+fn bench_pi_quantize_2bit_simd(c: &mut Criterion) {
+    let mut group = c.benchmark_group("pi_quantize_2bit_simd");
+    group.sample_size(100);
+
+    let step = PI / 4.0;
+
+    for &size in &[256, 4096, 4096 * 11008] {
+        let weights = random_weights(size);
+        let num_blocks = size / 4;
+        let mut output = vec![0u8; num_blocks];
+
+        group.throughput(Throughput::Bytes(num_blocks as u64));
+        group.bench_with_input(BenchmarkId::new("size", size), &weights, |b, w| {
+            b.iter(|| {
+                quantize_2bit_dispatch(black_box(w), step, black_box(&mut output))
+            })
+        });
+    }
+
+    group.finish();
+}
+
+/// Benchmark: NEON 3-bit quantization specifically
+#[cfg(target_arch = "aarch64")]
+fn bench_pi_quantize_3bit_neon(c: &mut Criterion) {
+    let mut group = c.benchmark_group("pi_quantize_3bit_neon");
+    group.sample_size(100);
+
+    let step = PI / 4.0;
+
+    for &size in &[256, 4096, 4096 * 1024, 4096 * 11008] {
+        let weights = random_weights(size);
+        let num_blocks = size / 8;
+        let output_bytes = num_blocks * 3;
+        let mut output = vec![0u8; output_bytes];
+
+        group.throughput(Throughput::Bytes(output_bytes as u64));
+        group.bench_with_input(BenchmarkId::new("weights", size), &weights, |b, w| {
+            b.iter(|| unsafe {
+                quantize_3bit_neon(black_box(w), step, black_box(&mut output))
+            })
+        });
+    }
+
+    group.finish();
+}
+
+/// Benchmark: NEON 2-bit quantization specifically
+#[cfg(target_arch = "aarch64")]
+fn bench_pi_quantize_2bit_neon(c: &mut Criterion) {
+    let mut group = c.benchmark_group("pi_quantize_2bit_neon");
+    group.sample_size(100);
+
+    let step = PI / 4.0;
+
+    for &size in &[256, 4096, 4096 * 1024, 4096 * 11008] {
+        let weights = random_weights(size);
+        let num_blocks = size / 4;
+        let mut output = vec![0u8; num_blocks];
+
+        group.throughput(Throughput::Bytes(num_blocks as u64));
+        group.bench_with_input(BenchmarkId::new("weights", size), &weights, |b, w| {
+            b.iter(|| unsafe {
+                quantize_2bit_neon(black_box(w), step, black_box(&mut output))
+            })
+        });
+    }
+
+    group.finish();
+}
+
+/// Benchmark: AVX2 3-bit quantization specifically
+#[cfg(target_arch = "x86_64")]
+fn bench_pi_quantize_3bit_avx2(c: &mut Criterion) {
+    if !is_x86_feature_detected!("avx2") {
+        return;
+    }
+
+    let mut group = c.benchmark_group("pi_quantize_3bit_avx2");
+    group.sample_size(100);
+
+    let step = PI / 4.0;
+
+    for &size in &[256, 4096, 4096 * 1024, 4096 * 11008] {
+        let weights = random_weights(size);
+        let num_blocks = size / 8;
+        let output_bytes = num_blocks * 3;
+        let mut output = vec![0u8; output_bytes];
+
+        group.throughput(Throughput::Bytes(output_bytes as u64));
+        group.bench_with_input(BenchmarkId::new("weights", size), &weights, |b, w| {
+            b.iter(|| unsafe {
+                quantize_3bit_avx2(black_box(w), step, black_box(&mut output))
+            })
+        });
+    }
+
+    group.finish();
+}
+
+/// Benchmark: AVX2 2-bit quantization specifically
+#[cfg(target_arch = "x86_64")]
+fn bench_pi_quantize_2bit_avx2(c: &mut Criterion) {
+    if !is_x86_feature_detected!("avx2") {
+        return;
+    }
+
+    let mut group = c.benchmark_group("pi_quantize_2bit_avx2");
+    group.sample_size(100);
+
+    let step = PI / 4.0;
+
+    for &size in &[256, 4096, 4096 * 1024, 4096 * 11008] {
+        let weights = random_weights(size);
+        let num_blocks = size / 4;
+        let mut output = vec![0u8; num_blocks];
+
+        group.throughput(Throughput::Bytes(num_blocks as u64));
+        group.bench_with_input(BenchmarkId::new("weights", size), &weights, |b, w| {
+            b.iter(|| unsafe {
+                quantize_2bit_avx2(black_box(w), step, black_box(&mut output))
             })
         });
     }
@@ -898,15 +1491,29 @@ fn bench_spectral_distortion(c: &mut Criterion) {
 #[cfg(target_arch = "aarch64")]
 criterion_group!(
     benches,
+    // Original (Vec-allocating) benchmarks
     bench_pi_quantize_3bit,
     bench_pi_quantize_2bit,
+    // NEW: Optimized scalar benchmarks (pre-allocated)
+    bench_pi_quantize_3bit_fast,
+    bench_pi_quantize_2bit_fast,
+    // NEW: SIMD dispatched benchmarks
+    bench_pi_quantize_3bit_simd,
+    bench_pi_quantize_2bit_simd,
+    // NEW: Architecture-specific NEON benchmarks
+    bench_pi_quantize_3bit_neon,
+    bench_pi_quantize_2bit_neon,
+    // Dequantization benchmarks
     bench_pi_dequantize_scalar,
     bench_pi_dequantize_neon,
+    // Hadamard benchmarks
     bench_hadamard_scalar,
     bench_hadamard_neon,
     bench_hadamard_layer_sizes,
+    // QAT benchmarks
     bench_qat_forward,
     bench_qat_backward_ste,
+    // Quality metrics
     bench_mse_computation,
     bench_spectral_distortion,
 );
@@ -914,14 +1521,28 @@ criterion_group!(
 #[cfg(target_arch = "x86_64")]
 criterion_group!(
     benches,
+    // Original (Vec-allocating) benchmarks
     bench_pi_quantize_3bit,
     bench_pi_quantize_2bit,
+    // NEW: Optimized scalar benchmarks (pre-allocated)
+    bench_pi_quantize_3bit_fast,
+    bench_pi_quantize_2bit_fast,
+    // NEW: SIMD dispatched benchmarks
+    bench_pi_quantize_3bit_simd,
+    bench_pi_quantize_2bit_simd,
+    // NEW: Architecture-specific AVX2 benchmarks
+    bench_pi_quantize_3bit_avx2,
+    bench_pi_quantize_2bit_avx2,
+    // Dequantization benchmarks
     bench_pi_dequantize_scalar,
     bench_pi_dequantize_avx2,
+    // Hadamard benchmarks
     bench_hadamard_scalar,
     bench_hadamard_layer_sizes,
+    // QAT benchmarks
     bench_qat_forward,
     bench_qat_backward_ste,
+    // Quality metrics
     bench_mse_computation,
     bench_spectral_distortion,
 );
@@ -929,13 +1550,24 @@ criterion_group!(
 #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
 criterion_group!(
     benches,
+    // Original (Vec-allocating) benchmarks
     bench_pi_quantize_3bit,
     bench_pi_quantize_2bit,
+    // NEW: Optimized scalar benchmarks (pre-allocated)
+    bench_pi_quantize_3bit_fast,
+    bench_pi_quantize_2bit_fast,
+    // NEW: SIMD dispatched benchmarks
+    bench_pi_quantize_3bit_simd,
+    bench_pi_quantize_2bit_simd,
+    // Dequantization benchmarks
     bench_pi_dequantize_scalar,
+    // Hadamard benchmarks
     bench_hadamard_scalar,
     bench_hadamard_layer_sizes,
+    // QAT benchmarks
     bench_qat_forward,
     bench_qat_backward_ste,
+    // Quality metrics
     bench_mse_computation,
     bench_spectral_distortion,
 );

@@ -272,3 +272,7 @@ unused_variables = "allow"
 dead_code = "allow"
 unreachable_code = "allow"
 unused_parens = "allow"
+
+[lints.rustdoc]
+# Allow broken intra-doc links (these are often array notation in doc comments)
+broken_intra_doc_links = "allow"

@@ -756,16 +756,19 @@ pub fn run_enhanced_training_cycle(state: &AppState) -> EnhancedTrainingResult {
 
             match submission.validate() {
                 Ok(()) => {
-                    state.lora_federation.write().submit(
+                    let mut lora = state.lora_federation.write();
+                    lora.submit(
                         submission,
                         "brain-sona-auto".to_string(),
                         0.8, // Moderate reputation for auto-generated weights
                     );
                     tracing::info!(
-                        "LoRA auto-submitted from {} SONA patterns ({} evidence)",
+                        "LoRA auto-submitted from {} SONA patterns ({} evidence), epoch now {}",
                         pattern_embeddings.len(),
-                        evidence_count
+                        evidence_count,
+                        lora.epoch,
                     );
+                    drop(lora);
                     true
                 }
                 Err(e) => {
@@ -2699,14 +2702,34 @@ async fn train_enhanced_endpoint(
 ) -> Result<Json<EnhancedTrainingResult>, (StatusCode, String)> {
     check_read_only(&state)?;
     let result = run_enhanced_training_cycle(&state);
+
+    // Persist LoRA consensus to Firestore if auto-submitted (fire-and-forget)
+    if result.lora_auto_submitted {
+        let lora = state.lora_federation.read();
+        if let Some(c) = lora.consensus.clone() {
+            let epoch = lora.epoch;
+            drop(lora);
+            let store = state.store.clone();
+            tokio::spawn(async move {
+                let doc = serde_json::json!({
+                    "epoch": epoch,
+                    "consensus": c,
+                });
+                store.firestore_put_public("brain_lora", "consensus", &doc).await;
+                tracing::info!("LoRA consensus persisted to Firestore after auto-submission");
+            });
+        }
+    }
+
     tracing::info!(
-        "Enhanced training cycle: sona={}, propositions={}, inferences={}, voice_thoughts={}, rules={}, auto_votes={}, curiosity={}, sona_threshold={:.3}",
+        "Enhanced training cycle: sona={}, propositions={}, inferences={}, voice_thoughts={}, rules={}, auto_votes={}, lora={}, curiosity={}, sona_threshold={:.3}",
         result.sona_patterns,
         result.propositions_extracted,
         result.inferences_derived,
         result.voice_thoughts,
         result.rule_count,
         result.auto_votes,
+        result.lora_auto_submitted,
         result.curiosity_triggered,
         result.sona_adaptive_threshold
     );

@@ -6069,28 +6069,36 @@ struct GoogleChatUser {
     email: Option<String>,
 }
 
-/// Google Chat response — return raw Message object.
+/// Google Chat Add-on response in the correct DataActions envelope.
 ///
-/// For HTTP endpoint Chat apps, the response is a plain Message object:
-///   { "text": "...", "cardsV2": [...] }
+/// Google Workspace Add-ons (HTTP endpoint) expect:
+///   { "hostAppDataAction": { "chatDataAction": { "createMessageAction": { "message": {...} } } } }
 ///
-/// The text field is required as a notification fallback.
-/// cardsV2 provides the rich card UI.
+/// Note: the key is `chatDataAction` (NOT `chatDataActionMarkup`).
+/// Ref: https://developers.google.com/workspace/add-ons/chat/quickstart-http
 fn chat_card(title: &str, subtitle: &str, sections: Vec<serde_json::Value>) -> serde_json::Value {
     serde_json::json!({
-        "text": format!("{} — {}", title, subtitle),
-        "cardsV2": [{
-            "cardId": "brain-response",
-            "card": {
-                "header": {
-                    "title": title,
-                    "subtitle": subtitle,
-                    "imageUrl": "https://pi.ruv.io/og-image.svg",
-                    "imageType": "CIRCLE"
-                },
-                "sections": sections
+        "hostAppDataAction": {
+            "chatDataAction": {
+                "createMessageAction": {
+                    "message": {
+                        "text": format!("{} — {}", title, subtitle),
+                        "cardsV2": [{
+                            "cardId": "brain-response",
+                            "card": {
+                                "header": {
+                                    "title": title,
+                                    "subtitle": subtitle,
+                                    "imageUrl": "https://pi.ruv.io/og-image.svg",
+                                    "imageType": "CIRCLE"
+                                },
+                                "sections": sections
+                            }
+                        }]
+                    }
+                }
             }
-        }]
+        }
     })
 }
 
@@ -6129,7 +6137,15 @@ async fn google_chat_handler(
             let raw = String::from_utf8_lossy(&body);
             tracing::warn!("Failed to parse Chat event: {}. Raw: {}", err, &raw[..raw.len().min(500)]);
             return Json(serde_json::json!({
-                "text": "Pi Brain received your message but couldn't parse it. Try: help"
+                "hostAppDataAction": {
+                    "chatDataAction": {
+                        "createMessageAction": {
+                            "message": {
+                                "text": "Pi Brain received your message but couldn't parse it. Try: help"
+                            }
+                        }
+                    }
+                }
             }));
         }
     };

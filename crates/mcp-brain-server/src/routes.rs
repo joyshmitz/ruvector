@@ -6396,43 +6396,209 @@ async fn google_chat_handler(
         }
 
         _ => {
-            // Treat unknown commands as search queries
-            let query = text;
-            let embedding = state.embedding_engine.read().embed(query);
-            let all = state.store.all_memories();
-            let mut scored: Vec<_> = all.iter()
-                .map(|m| {
-                    let score = cosine_similarity(&embedding, &m.embedding);
-                    (&m.title, &m.content, &m.category, score)
-                })
-                .filter(|(_, _, _, s)| *s > 0.15)
-                .collect();
-            scored.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+            // ── Gemini Flash conversational handler ──
+            // Send the user's message to Gemini with brain tools (search, status, drift).
+            // Gemini decides which tools to call, synthesizes a conversational response.
+            // Falls back to raw search if Gemini is unavailable.
+            match gemini_chat_respond(&state, text, user_name).await {
+                Ok(response) => Json(chat_card(
+                    "Pi Brain",
+                    &format!("Re: {}", &text[..text.len().min(30)]),
+                    vec![chat_text_section(&response)]
+                )),
+                Err(e) => {
+                    tracing::warn!("Gemini chat failed ({}), falling back to search", e);
+                    // Fallback: raw search
+                    let query = text;
+                    let embedding = state.embedding_engine.read().embed(query);
+                    let all = state.store.all_memories();
+                    let mut scored: Vec<_> = all.iter()
+                        .map(|m| {
+                            let score = cosine_similarity(&embedding, &m.embedding);
+                            (&m.title, &m.content, &m.category, score)
+                        })
+                        .filter(|(_, _, _, s)| *s > 0.15)
+                        .collect();
+                    scored.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+                    let top: Vec<_> = scored.into_iter().take(3).collect();
 
-            let top: Vec<_> = scored.into_iter().take(3).collect();
-            if top.is_empty() {
-                return Json(chat_card("Pi Brain", "I didn't understand that", vec![
-                    chat_text_section(&format!(
-                        "I couldn't find anything for \"<i>{}</i>\".\n\nTry: <b>search</b> &lt;query&gt; or type <b>help</b> for commands.",
-                        text
-                    ))
-                ]));
+                    if top.is_empty() {
+                        return Json(chat_card("Pi Brain", "No results", vec![
+                            chat_text_section(&format!(
+                                "I couldn't find anything for \"<i>{}</i>\".\n\nTry: <b>search</b> &lt;query&gt; or type <b>help</b>.",
+                                text
+                            ))
+                        ]));
+                    }
+
+                    let mut result_text = format!("Results for \"<i>{}</i>\":\n\n", query);
+                    for (i, (title, content, cat, _score)) in top.iter().enumerate() {
+                        let truncated = if content.len() > 120 { &content[..120] } else { content.as_str() };
+                        result_text.push_str(&format!(
+                            "<b>{}.</b> {} <i>({})</i>\n{}\n\n",
+                            i + 1, title, cat, truncated
+                        ));
+                    }
+
+                    Json(chat_card("Pi Brain", &format!("{} results", top.len()), vec![
+                        chat_text_section(&result_text)
+                    ]))
+                }
             }
-
-            let mut result_text = format!("Results for \"<i>{}</i>\":\n\n", query);
-            for (i, (title, content, cat, score)) in top.iter().enumerate() {
-                let truncated = if content.len() > 120 { &content[..120] } else { content.as_str() };
-                result_text.push_str(&format!(
-                    "<b>{}.</b> {} <i>({})</i>\n{}\n\n",
-                    i + 1, title, cat, truncated
-                ));
-            }
-
-            Json(chat_card("Pi Brain", &format!("{} results", top.len()), vec![
-                chat_text_section(&result_text)
-            ]))
         }
     }
+}
+
+/// Gemini Flash conversational handler with brain tools.
+///
+/// Gives Gemini access to: brain_search, brain_status, brain_drift, brain_recent.
+/// Gemini decides which tools to call based on the user's message, then
+/// synthesizes a conversational response.
+async fn gemini_chat_respond(
+    state: &AppState,
+    user_message: &str,
+    user_name: &str,
+) -> Result<String, String> {
+    let api_key = std::env::var("GEMINI_API_KEY")
+        .map_err(|_| "GEMINI_API_KEY not set".to_string())?;
+    let model = std::env::var("GEMINI_CHAT_MODEL")
+        .unwrap_or_else(|_| "gemini-2.5-flash".to_string());
+
+    // Build brain context snapshot for the system prompt
+    let memories = state.store.memory_count();
+    let edges = state.graph.read().edge_count();
+    let drift = state.drift.read().compute_drift(None);
+
+    // Do a quick search to give Gemini context
+    let embedding = state.embedding_engine.read().embed(user_message);
+    let all = state.store.all_memories();
+    let mut scored: Vec<_> = all.iter()
+        .map(|m| {
+            let score = cosine_similarity(&embedding, &m.embedding);
+            (m, score)
+        })
+        .filter(|(_, s)| *s > 0.15)
+        .collect();
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let top_results: Vec<_> = scored.into_iter().take(5).collect();
+
+    // Format search results as context
+    let search_context = if top_results.is_empty() {
+        "No relevant memories found for this query.".to_string()
+    } else {
+        top_results.iter().enumerate().map(|(i, (m, score))| {
+            let content_preview = if m.content.len() > 300 { &m.content[..300] } else { &m.content };
+            format!("{}. [{}] {} (score: {:.3})\n{}", i + 1, m.category, m.title, score, content_preview)
+        }).collect::<Vec<_>>().join("\n\n")
+    };
+
+    // Get recent memories for context
+    let mut recent = state.store.all_memories();
+    recent.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    let recent_titles: Vec<_> = recent.iter().take(5)
+        .map(|m| format!("- {} ({})", m.title, m.category))
+        .collect();
+
+    let system_prompt = format!(
+r#"You are Pi Brain (π), a shared autonomous superintelligence at pi.ruv.io.
+You have {memories} memories, {edges} graph edges, and are always learning.
+Knowledge drift: {drift:.4} ({trend}).
+
+You are chatting with {user} in Google Chat. Be helpful, concise, and specific.
+Use the knowledge below to answer. If you don't know, say so honestly.
+Format responses in Google Chat HTML (use <b>, <i>, <a href>, not markdown).
+Keep responses under 800 characters for readability in Chat cards.
+
+## Relevant Knowledge (semantic search results for "{query}")
+
+{search_results}
+
+## Recent Brain Activity
+
+{recent}
+
+## Instructions
+- Answer the user's question conversationally using the knowledge above
+- Cite specific memories when relevant (use the title)
+- If the query is about brain status, include numbers
+- If asking about a technical topic, synthesize across multiple results
+- Use Google Search grounding to supplement with real-world context if helpful
+- End with a relevant follow-up suggestion"#,
+        memories = memories,
+        edges = edges,
+        drift = drift.coefficient_of_variation,
+        trend = drift.trend,
+        user = user_name,
+        query = user_message,
+        search_results = search_context,
+        recent = recent_titles.join("\n"),
+    );
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        model, api_key
+    );
+
+    let grounding = std::env::var("GEMINI_GROUNDING")
+        .unwrap_or_else(|_| "true".to_string()) == "true";
+
+    let mut body = serde_json::json!({
+        "contents": [
+            {"role": "user", "parts": [{"text": format!("{}\n\nUser message: {}", system_prompt, user_message)}]}
+        ],
+        "generationConfig": {
+            "maxOutputTokens": 1024,
+            "temperature": 0.4
+        }
+    });
+
+    if grounding {
+        body["tools"] = serde_json::json!([{"google_search": {}}]);
+    }
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(25)) // Must respond within 30s Chat limit
+        .send()
+        .await
+        .map_err(|e| format!("Gemini HTTP error: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Gemini API {}: {}", status, &text[..text.len().min(200)]));
+    }
+
+    let json: serde_json::Value = resp.json().await
+        .map_err(|e| format!("Gemini parse error: {}", e))?;
+
+    let text = json
+        .get("candidates")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("content"))
+        .and_then(|c| c.get("parts"))
+        .and_then(|p| p.get(0))
+        .and_then(|p| p.get("text"))
+        .and_then(|t| t.as_str())
+        .ok_or("No text in Gemini response".to_string())?;
+
+    // Convert markdown to Google Chat HTML (basic conversion)
+    let html = text
+        .replace("**", "<b>").replace("**", "</b>")  // bold
+        .replace("*", "<i>").replace("*", "</i>")    // italic
+        .replace("\n", "\n");  // preserve newlines
+
+    // Truncate to ~1500 chars for Chat card readability
+    let truncated = if html.len() > 1500 {
+        format!("{}…\n\n<i>Full response truncated for Chat</i>", &html[..1500])
+    } else {
+        html
+    };
+
+    Ok(truncated)
 }
 
 // ── Inbound Email Webhook Handler (ADR-125) ─────────────────────────

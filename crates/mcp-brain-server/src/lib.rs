@@ -30,3 +30,5 @@ pub mod web_ingest;
 pub mod web_store;
 pub mod pubmed;
 pub mod quantization;
+pub mod notify;
+pub mod gist;

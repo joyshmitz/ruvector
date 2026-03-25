@@ -24,6 +24,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tower_http::cors::CorsLayer;
@@ -272,6 +273,9 @@ pub async fn create_router() -> (Router, AppState) {
         web_store,
         crawl_adapter,
         cached_partition: Arc::new(parking_lot::RwLock::new(None)),
+        notifier: crate::notify::ResendNotifier::from_env(),
+        cached_status: Arc::new(parking_lot::RwLock::new(None)),
+        gist_publisher: crate::gist::GistPublisher::from_env().map(Arc::new),
     };
 
     let router = Router::new()
@@ -343,6 +347,24 @@ pub async fn create_router() -> (Router, AppState) {
         // ── Gemini Optimizer ──
         .route("/v1/optimizer/status", get(optimizer_status))
         .route("/v1/optimize", post(optimize_endpoint))
+        // ── Email Notifications (ADR-125) ──
+        .route("/v1/notify/test", post(notify_test))
+        .route("/v1/notify/status", post(notify_status))
+        .route("/v1/notify/send", post(notify_send))
+        .route("/v1/notify/welcome", post(notify_welcome))
+        .route("/v1/notify/help", post(notify_help))
+        .route("/v1/notify/digest", post(notify_digest))
+        .route("/v1/notify/pixel/:tracking_id", get(notify_pixel))
+        .route("/v1/notify/opens", get(notify_opens))
+        .route("/v1/notify/subscribe", post(notify_subscribe))
+        .route("/v1/notify/unsubscribe", post(notify_unsubscribe))
+        // ── Inbound Email Webhook (ADR-125) ──
+        .route("/v1/email/inbound", post(email_inbound))
+        // ── Gist Publisher ──
+        .route("/v1/gist/preview", post(gist_preview))
+        .route("/v1/gist/publish", post(gist_publish))
+        // ── Google Chat Bot (ADR-126) ──
+        .route("/v1/chat/google", post(google_chat_handler))
         .layer({
             // CORS origins: configurable via CORS_ORIGINS env var (comma-separated).
             // Falls back to safe defaults if unset.
@@ -451,12 +473,21 @@ pub fn run_enhanced_training_cycle(state: &AppState) -> EnhancedTrainingResult {
     // 3. Neural-symbolic rule extraction (ADR-110)
     let all_memories = state.store.all_memories();
     let clusters = build_memory_clusters(&all_memories);
-    let (propositions_extracted, inferences_derived) = {
+    let (propositions_extracted, inferences_derived, raw_propositions, raw_inferences) = {
         let mut ns = state.neural_symbolic.write();
         let props = ns.extract_from_clusters(&clusters);
         // Run forward-chaining inference over all propositions (new + existing)
         let inferences = ns.run_inference();
-        (props.len(), inferences.len())
+        // Capture actual content for discovery publishing
+        let prop_data: Vec<(String, String, String, f64)> = props.iter().map(|p| {
+            let subject = p.arguments.first().cloned().unwrap_or_default();
+            let object = p.arguments.get(1).cloned().unwrap_or_default();
+            (subject, p.predicate.clone(), object, p.confidence)
+        }).collect();
+        let inference_data: Vec<String> = inferences.iter().map(|inf| {
+            inf.explanation.clone()
+        }).collect();
+        (props.len(), inferences.len(), prop_data, inference_data)
     };
 
     // 3b. ADR-123: Record drift snapshots from cluster centroids
@@ -874,6 +905,164 @@ pub fn run_enhanced_training_cycle(state: &AppState) -> EnhancedTrainingResult {
 
     // Record reflection in the internal voice
     state.internal_voice.write().reflect(self_reflection.clone());
+
+    // ── Step 10: Build discovery for potential gist publication ──
+    let witness_memory_ids: Vec<String> = all_memories
+        .iter()
+        .filter(|m| m.witness_chain.is_some())
+        .take(10)
+        .map(|m| m.id.to_string())
+        .collect();
+    let witness_hashes: Vec<String> = all_memories
+        .iter()
+        .filter(|m| !m.witness_hash.is_empty())
+        .take(10)
+        .map(|m| m.witness_hash.clone())
+        .collect();
+
+    // Build findings from actual brain knowledge — pull top cross-domain memories
+    let mut findings = Vec::new();
+
+    // Find memories tagged with "cross-domain" or "discovery" — these are the real insights
+    let discovery_memories: Vec<&BrainMemory> = all_memories.iter()
+        .filter(|m| {
+            m.tags.iter().any(|t| t.contains("cross-domain") || t.contains("discovery") || t.contains("hypothesis"))
+                || m.title.contains("Cross-Domain")
+                || m.title.contains("Discovery")
+                || m.title.contains("Hypothesis")
+        })
+        .collect();
+
+    // Use actual memory content as findings (real knowledge, not metrics)
+    for mem in discovery_memories.iter().take(5) {
+        // Truncate content to first meaningful sentence
+        let content = &mem.content;
+        let finding = if let Some(pos) = content[..content.len().min(300)].find(". ") {
+            &content[..pos + 1]
+        } else {
+            &content[..content.len().min(200)]
+        };
+        findings.push(format!("{}: {}", mem.title, finding));
+    }
+
+    // Add reflection parts that aren't just metrics
+    for part in &reflection_parts {
+        if part.len() > 30 && !part.starts_with("Vote coverage") {
+            findings.push(part.clone());
+        }
+    }
+
+    if curiosity_triggered {
+        findings.push("Curiosity engine detected knowledge gaps and synthesized exploratory memory".to_string());
+    }
+
+    let mut methodology = Vec::new();
+    methodology.push(format!("SONA trajectory replay: {}", sona_result));
+    methodology.push(format!(
+        "Domain evolution: Pareto front {} → {} solutions",
+        pareto_before, pareto_after
+    ));
+    methodology.push(format!(
+        "Neural-symbolic extraction from {} category clusters",
+        clusters.len()
+    ));
+    methodology.push(format!(
+        "Strange loop meta-cognitive assessment: quality={:.4}",
+        strange_loop_adjustment
+    ));
+    methodology.push(format!(
+        "Internal voice reflection: {} thoughts generated",
+        voice_thoughts
+    ));
+
+    let dominant_category = category_counts
+        .iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(cat, _)| cat.clone())
+        .unwrap_or_else(|| "general".to_string());
+
+    // Build a title from the actual inferences (not generic metrics)
+    let discovery_title = if !raw_inferences.is_empty() {
+        // Use first inference as the basis for the title
+        let first = &raw_inferences[0];
+        let short = if first.len() > 80 { &first[..80] } else { first };
+        format!("Discovery: {}", short)
+    } else if curiosity_triggered {
+        "Curiosity-Driven Knowledge Gap Analysis".to_string()
+    } else {
+        format!("Cross-Domain Synthesis in {}", dominant_category)
+    };
+
+    // Build abstract from actual findings, not metrics
+    let abstract_parts: Vec<&str> = raw_inferences.iter()
+        .take(3)
+        .map(|s| s.as_str())
+        .collect();
+    let abstract_text = if !abstract_parts.is_empty() {
+        format!(
+            "Through forward-chaining symbolic reasoning over {} observations, \
+             the π Brain discovered: {}. These inferences emerge from {} propositions \
+             extracted across {} knowledge clusters, with a meta-cognitive quality \
+             assessment of {:.4}.",
+            memory_count,
+            abstract_parts.join("; "),
+            propositions_extracted,
+            clusters.len(),
+            strange_loop_adjustment,
+        )
+    } else {
+        format!(
+            "Analysis of {} observations across {} clusters yielded {} propositions. \
+             The cognitive pipeline is building towards novel inference capability.",
+            memory_count, clusters.len(), propositions_extracted
+        )
+    };
+
+    let pareto_growth = pareto_after.saturating_sub(pareto_before);
+
+    let discovery = crate::gist::Discovery {
+        title: discovery_title,
+        category: dominant_category,
+        abstract_text,
+        findings,
+        methodology,
+        evidence_count: memory_count,
+        confidence: vote_coverage,
+        timestamp: chrono::Utc::now(),
+        witness_memory_ids,
+        witness_hashes,
+        strange_loop_score: strange_loop_adjustment,
+        new_inferences: inferences_derived,
+        propositions_extracted,
+        sona_patterns: sona_stats.patterns_stored,
+        pareto_growth,
+        curiosity_triggered,
+        self_reflection: self_reflection.clone(),
+        propositions: raw_propositions,
+        inferences: raw_inferences,
+    };
+
+    // Attempt gist publication (non-blocking — caller handles async)
+    if let Some(ref publisher) = state.gist_publisher {
+        if discovery.is_publishable() {
+            let pub_clone = publisher.clone();
+            let disc_clone = discovery.clone();
+            // Spawn async publish in background (can't await in sync fn)
+            tokio::spawn(async move {
+                match pub_clone.try_publish(&disc_clone).await {
+                    Ok(Some(url)) => {
+                        tracing::info!("Discovery published to gist: {}", url);
+                    }
+                    Ok(None) => {} // Not novel enough or rate limited
+                    Err(e) => {
+                        tracing::warn!("Gist publish failed: {}", e);
+                    }
+                }
+            });
+        } else {
+            tracing::debug!("Discovery not publishable: {}", discovery.novelty_report());
+        }
+    }
 
     EnhancedTrainingResult {
         sona_message: sona_result,
@@ -2130,6 +2319,16 @@ async fn partition(
 async fn status(
     State(state): State<AppState>,
 ) -> Json<StatusResponse> {
+    // Return cached response if fresh (< 5 seconds old)
+    {
+        let cache = state.cached_status.read();
+        if let Some((ts, ref resp)) = *cache {
+            if ts.elapsed() < std::time::Duration::from_secs(5) {
+                return Json(resp.clone());
+            }
+        }
+    }
+
     let graph = state.graph.read();
     // Use node_count as a cheap proxy for cluster count instead of running
     // full MinCut partitioning on every status call (expensive O(V*E) op)
@@ -2198,7 +2397,7 @@ async fn status(
         0.0
     };
 
-    Json(StatusResponse {
+    let resp = StatusResponse {
         total_memories: state.store.memory_count(),
         total_contributors: state.store.contributor_count(),
         graph_nodes: graph.node_count(),
@@ -2249,7 +2448,12 @@ async fn status(
         midstream_strange_loop_version: strange_loop::VERSION.to_string(),
         sparsifier_compression: graph.sparsifier_stats().map(|s| s.compression_ratio).unwrap_or(0.0),
         sparsifier_edges: graph.sparsifier_stats().map(|s| s.sparsified_edges).unwrap_or(0),
-    })
+    };
+
+    // Cache the computed response for 5 seconds
+    *state.cached_status.write() = Some((std::time::Instant::now(), resp.clone()));
+
+    Json(resp)
 }
 
 /// GET /v1/sona/stats — SONA learning engine statistics (auth required)
@@ -5355,5 +5559,966 @@ async fn proxy_delete(
     } else {
         let body = resp.text().await.unwrap_or_default();
         Err(format!("API error ({status}): {body}"))
+    }
+}
+
+// ── Gist Publisher Handlers ──────────────────────────────────────────
+
+/// POST /v1/gist/preview — show what the novelty gate sees without publishing.
+async fn gist_preview(
+    State(state): State<AppState>,
+    _contributor: AuthenticatedContributor,
+) -> Json<serde_json::Value> {
+    // Run enhanced training (which internally builds a discovery and checks publishability)
+    let result = run_enhanced_training_cycle(&state);
+
+    // Read current propositions + inferences from symbolic engine
+    let ns = state.neural_symbolic.read();
+    let props: Vec<serde_json::Value> = ns.all_propositions().iter().take(10).map(|p| {
+        serde_json::json!({
+            "predicate": p.predicate,
+            "arguments": p.arguments,
+            "confidence": p.confidence,
+            "reinforcements": p.reinforcement_count,
+        })
+    }).collect();
+    drop(ns);
+
+    Json(serde_json::json!({
+        "training_result": {
+            "propositions_extracted": result.propositions_extracted,
+            "inferences_derived": result.inferences_derived,
+            "strange_loop_score": result.strange_loop_score,
+            "sona_patterns": result.sona_patterns,
+            "pareto_before": result.pareto_before,
+            "pareto_after": result.pareto_after,
+            "curiosity_triggered": result.curiosity_triggered,
+            "self_reflection": result.self_reflection,
+        },
+        "novelty_thresholds": {
+            "min_inferences": 5,
+            "min_propositions": 8,
+            "min_strange_loop": 0.05,
+            "min_sona_patterns": 1,
+            "min_pareto_growth": 2,
+            "min_evidence": 100,
+        },
+        "current_propositions": props,
+        "gist_publisher_active": state.gist_publisher.is_some(),
+        "published_count": state.gist_publisher.as_ref().map(|p| p.published_count()).unwrap_or(0),
+    }))
+}
+
+/// POST /v1/gist/publish — force-publish (the automatic path publishes only when
+/// the novelty gate passes during the background cognitive loop).
+async fn gist_publish(
+    State(state): State<AppState>,
+    _contributor: AuthenticatedContributor,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let publisher = state.gist_publisher.as_ref()
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "GITHUB_GIST_PAT not configured".into()))?;
+
+    // The enhanced training cycle now auto-publishes via tokio::spawn if thresholds are met.
+    // This endpoint triggers a cycle and reports the result.
+    let result = run_enhanced_training_cycle(&state);
+
+    Ok(Json(serde_json::json!({
+        "cycle_ran": true,
+        "propositions_extracted": result.propositions_extracted,
+        "inferences_derived": result.inferences_derived,
+        "strange_loop_score": result.strange_loop_score,
+        "sona_patterns": result.sona_patterns,
+        "pareto_growth": result.pareto_after.saturating_sub(result.pareto_before),
+        "curiosity_triggered": result.curiosity_triggered,
+        "note": "Gist is published automatically when all novelty thresholds are met. Check Cloud Run logs for 'Discovery published to gist' entries.",
+        "published_count": publisher.published_count(),
+    })))
+}
+
+// ── Email Notification Handlers (ADR-125) ──────────────────────────────
+
+/// POST /v1/notify/test — send a test email via Resend
+async fn notify_test(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(resp) = verify_system_key(&headers) {
+        return resp;
+    }
+
+    let notifier = match state.notifier.as_ref() {
+        Some(n) => n,
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "error": "RESEND_API_KEY not configured" }))),
+    };
+
+    match notifier.send_test().await {
+        Ok(id) => (StatusCode::OK, Json(serde_json::json!({
+            "ok": true,
+            "email_id": id,
+            "from": "pi@ruv.io",
+            "message": "Test email sent successfully"
+        }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
+    }
+}
+
+/// POST /v1/notify/status — send a brain status email
+async fn notify_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(resp) = verify_system_key(&headers) {
+        return resp;
+    }
+
+    let notifier = match state.notifier.as_ref() {
+        Some(n) => n,
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "error": "RESEND_API_KEY not configured" }))),
+    };
+
+    // Collect stats without holding locks across await points
+    let (memories, graph_edges, sona_patterns, drift) = {
+        let memories = state.store.memory_count();
+        let graph_edges = state.graph.read().edge_count();
+        let sona_patterns = state.sona.read().stats().patterns_stored;
+        let drift = state.drift.read().compute_drift(None).coefficient_of_variation;
+        (memories, graph_edges, sona_patterns, drift)
+    };
+
+    match notifier.send_status(memories, graph_edges, sona_patterns, drift).await {
+        Ok(id) => (StatusCode::OK, Json(serde_json::json!({
+            "ok": true,
+            "email_id": id,
+            "memories": memories,
+            "graph_edges": graph_edges,
+            "sona_patterns": sona_patterns,
+            "drift": drift
+        }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
+    }
+}
+
+/// POST /v1/notify/send — send a custom notification email
+async fn notify_send(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(resp) = verify_system_key(&headers) {
+        return resp;
+    }
+
+    let notifier = match state.notifier.as_ref() {
+        Some(n) => n,
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "error": "RESEND_API_KEY not configured" }))),
+    };
+
+    let category = body["category"].as_str().unwrap_or("status");
+    let subject = match body["subject"].as_str() {
+        Some(s) => s,
+        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "missing 'subject' field" }))),
+    };
+    let html = match body["html"].as_str() {
+        Some(s) => s,
+        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "missing 'html' field" }))),
+    };
+
+    match notifier.send(category, subject, html).await {
+        Ok(id) => (StatusCode::OK, Json(serde_json::json!({
+            "ok": true,
+            "email_id": id,
+            "category": category
+        }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
+    }
+}
+
+/// POST /v1/notify/welcome — send welcome email to a user
+async fn notify_welcome(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(resp) = verify_system_key(&headers) {
+        return resp;
+    }
+
+    let notifier = match state.notifier.as_ref() {
+        Some(n) => n,
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "error": "RESEND_API_KEY not configured" }))),
+    };
+
+    let email = match body["email"].as_str() {
+        Some(e) => e,
+        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "missing 'email' field" }))),
+    };
+    let name = body["name"].as_str();
+
+    match notifier.send_welcome(email, name).await {
+        Ok(id) => (StatusCode::OK, Json(serde_json::json!({
+            "ok": true,
+            "email_id": id,
+            "sent_to": email
+        }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
+    }
+}
+
+/// POST /v1/notify/help — send help/commands reference email
+async fn notify_help(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(resp) = verify_system_key(&headers) {
+        return resp;
+    }
+
+    let notifier = match state.notifier.as_ref() {
+        Some(n) => n,
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "error": "RESEND_API_KEY not configured" }))),
+    };
+
+    let to = body["email"].as_str();
+
+    match notifier.send_help(to).await {
+        Ok(id) => (StatusCode::OK, Json(serde_json::json!({
+            "ok": true,
+            "email_id": id
+        }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
+    }
+}
+
+/// POST /v1/notify/digest — send daily discovery digest email
+/// Triggered by Cloud Scheduler after research jobs complete.
+/// Body: { "topic": "optional focus topic", "limit": 10, "hours": 24 }
+async fn notify_digest(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(resp) = verify_system_key(&headers) {
+        return resp;
+    }
+
+    let notifier = match state.notifier.as_ref() {
+        Some(n) => n,
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "error": "RESEND_API_KEY not configured" }))),
+    };
+
+    let limit = body["limit"].as_u64().unwrap_or(10) as usize;
+    let topic = body["topic"].as_str();
+    let hours = body["hours"].as_u64().unwrap_or(24);
+
+    // Gather recent discoveries from the store
+    let cutoff = chrono::Utc::now() - chrono::Duration::hours(hours as i64);
+    let mut all = state.store.all_memories();
+    all.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+    // Filter by recency and optionally by topic
+    let filtered: Vec<_> = all.iter()
+        .filter(|m| {
+            if m.created_at < cutoff {
+                return false;
+            }
+            topic.map_or(true, |t| {
+                let t_lower = t.to_lowercase();
+                m.title.to_lowercase().contains(&t_lower)
+                    || m.content.to_lowercase().contains(&t_lower)
+                    || m.tags.iter().any(|tag| tag.to_lowercase().contains(&t_lower))
+            })
+        })
+        .take(limit)
+        .collect();
+
+    if filtered.is_empty() {
+        return (StatusCode::OK, Json(serde_json::json!({
+            "ok": true,
+            "skipped": true,
+            "reason": "no new discoveries in the last period"
+        })));
+    }
+
+    // Build HTML rows
+    let mut rows = String::new();
+    for (i, m) in filtered.iter().enumerate() {
+        let title = if m.title.len() > 100 { &m.title[..100] } else { &m.title };
+        let content = if m.content.len() > 200 { &m.content[..200] } else { &m.content };
+        let quality = m.quality_score.mean();
+        let tags_html: Vec<_> = m.tags.iter().take(4).map(|t| {
+            format!("<span style=\"display:inline-block;background:#1a1a3a;color:#4fc3f7;padding:1px 6px;border-radius:3px;font-size:10px;margin:1px;\">{}</span>", t)
+        }).collect();
+        rows.push_str(&format!(
+            r#"<tr style="border-bottom:1px solid #222;">
+<td style="padding:10px 0;">
+<strong style="color:#4fc3f7;">{num}. {title}</strong><br>
+<span style="color:#888;font-size:11px;">{cat} | quality: {quality:.2}</span> {tags}<br>
+<span style="color:#999;font-size:12px;">{content}...</span>
+</td></tr>"#,
+            num = i + 1,
+            title = title,
+            cat = m.category,
+            quality = quality,
+            tags = tags_html.join(""),
+            content = content,
+        ));
+    }
+
+    let topic_line = topic.map_or(String::new(), |t| {
+        format!("<p style=\"color:#888;font-size:12px;\">Focus: <span style=\"background:#1a1a3a;color:#7fdbca;padding:2px 6px;border-radius:4px;\">{}</span></p>", t)
+    });
+
+    let status = state.store.memory_count();
+    let edges = state.graph.read().edge_count();
+
+    let html = format!(
+        r#"<div style="font-family:'SF Mono',monospace;background:#0a0a23;color:#e0e0ff;padding:24px;border-radius:12px;max-width:600px;">
+<h2 style="color:#4fc3f7;margin:0 0 4px 0;">Daily Discovery Digest</h2>
+<p style="color:#888;font-size:12px;margin:0 0 4px 0;">Last {hours}h | {count} discoveries | {total} total memories | {edges} edges</p>
+{topic_line}
+<table style="color:#e0e0ff;font-size:13px;width:100%;">{rows}</table>
+<div style="background:#1a1a3a;padding:12px 16px;border-radius:8px;margin-top:16px;">
+<p style="color:#7fdbca;font-size:13px;margin:0;">Reply with <code style="color:#7fdbca;">search &lt;query&gt;</code> to explore | <code style="color:#7fdbca;">help</code> for commands</p>
+</div>
+<div style="color:#666;margin-top:20px;font-size:11px;border-top:1px solid #222;padding-top:12px;">
+<a href="https://pi.ruv.io" style="color:#4fc3f7;">pi.ruv.io</a> | Powered by Resend
+</div></div>"#,
+        hours = hours,
+        count = filtered.len(),
+        total = status,
+        edges = edges,
+        topic_line = topic_line,
+        rows = rows,
+    );
+
+    let subject = match topic {
+        Some(t) => format!("[pi.ruv.io/discovery] Daily Digest: {}", t),
+        None => "[pi.ruv.io/discovery] Daily Discovery Digest".into(),
+    };
+
+    match notifier.send("discovery", &subject, &html).await {
+        Ok(id) => (StatusCode::OK, Json(serde_json::json!({
+            "ok": true,
+            "email_id": id,
+            "discoveries": filtered.len(),
+            "topic": topic
+        }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
+    }
+}
+
+/// 1x1 transparent GIF for email open tracking
+const TRACKING_PIXEL_GIF: &[u8] = &[
+    0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00,
+    0x80, 0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x21,
+    0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44,
+    0x01, 0x00, 0x3b,
+];
+
+/// GET /v1/notify/pixel/:tracking_id — email open tracking pixel
+async fn notify_pixel(
+    State(state): State<AppState>,
+    Path(tracking_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> impl axum::response::IntoResponse {
+    let category = params.get("c").map(|s| s.as_str()).unwrap_or("unknown");
+    let subject = params.get("s").map(|s| s.as_str()).unwrap_or("");
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok());
+
+    if let Some(notifier) = state.notifier.as_ref() {
+        notifier.tracker.record_open(&tracking_id, category, subject, user_agent);
+    }
+
+    (
+        StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, "image/gif"),
+            (axum::http::header::CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0"),
+            (axum::http::header::PRAGMA, "no-cache"),
+            (axum::http::header::EXPIRES, "Thu, 01 Jan 1970 00:00:00 GMT"),
+        ],
+        TRACKING_PIXEL_GIF,
+    )
+}
+
+/// GET /v1/notify/opens — get email open tracking stats (requires system key)
+async fn notify_opens(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(resp) = verify_system_key(&headers) {
+        return resp;
+    }
+
+    let notifier = match state.notifier.as_ref() {
+        Some(n) => n,
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "error": "RESEND_API_KEY not configured" }))),
+    };
+
+    let limit = params.get("limit").and_then(|l| l.parse().ok()).unwrap_or(20);
+    let recent = notifier.tracker.recent_opens(limit);
+    let stats = notifier.tracker.stats_summary();
+
+    let opens: Vec<serde_json::Value> = recent.iter().map(|o| {
+        serde_json::json!({
+            "tracking_id": o.tracking_id,
+            "category": o.category,
+            "subject": o.subject,
+            "opened_at": o.opened_at.to_rfc3339(),
+            "user_agent": o.user_agent,
+        })
+    }).collect();
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "ok": true,
+        "stats": stats,
+        "recent_opens": opens,
+        "open_rates": notifier.tracker.open_rates(),
+    })))
+}
+
+/// POST /v1/notify/subscribe — public endpoint for email subscription
+async fn notify_subscribe(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let email = match body["email"].as_str() {
+        Some(e) if e.contains('@') && e.len() > 3 => e,
+        _ => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "valid email required" }))),
+    };
+    let frequency = body["frequency"].as_str().unwrap_or("daily");
+
+    let notifier = match state.notifier.as_ref() {
+        Some(n) => n,
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "error": "email not configured" }))),
+    };
+
+    // Send welcome email to the subscriber
+    match notifier.send_welcome(email, None).await {
+        Ok(id) => {
+            tracing::info!("New subscriber: {} (frequency: {})", email, frequency);
+            (StatusCode::OK, Json(serde_json::json!({
+                "ok": true,
+                "email_id": id,
+                "subscribed": email,
+                "frequency": frequency
+            })))
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
+    }
+}
+
+/// POST /v1/notify/unsubscribe — public endpoint for email unsubscription
+async fn notify_unsubscribe(
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let email = match body["email"].as_str() {
+        Some(e) if e.contains('@') => e,
+        _ => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "valid email required" }))),
+    };
+
+    tracing::info!("Unsubscribe request: {}", email);
+    // TODO: persist to Firestore subscription collection
+    (StatusCode::OK, Json(serde_json::json!({
+        "ok": true,
+        "unsubscribed": email,
+        "message": "You have been unsubscribed from Pi Brain digests."
+    })))
+}
+
+// ── Google Chat Bot Handler (ADR-126) ────────────────────────────────
+
+/// Google Chat event payload
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleChatEvent {
+    #[serde(rename = "type")]
+    event_type: Option<String>,
+    message: Option<GoogleChatMessage>,
+    space: Option<GoogleChatSpace>,
+    user: Option<GoogleChatUser>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleChatMessage {
+    text: Option<String>,
+    argument_text: Option<String>,
+    sender: Option<GoogleChatUser>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleChatSpace {
+    name: Option<String>,
+    display_name: Option<String>,
+    #[serde(rename = "type")]
+    space_type: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleChatUser {
+    display_name: Option<String>,
+    email: Option<String>,
+}
+
+/// Google Chat card response — always includes `text` fallback for HTTP endpoint mode
+fn chat_card(title: &str, subtitle: &str, sections: Vec<serde_json::Value>) -> serde_json::Value {
+    serde_json::json!({
+        "text": format!("{} — {}", title, subtitle),
+        "cardsV2": [{
+            "cardId": "brain-response",
+            "card": {
+                "header": {
+                    "title": title,
+                    "subtitle": subtitle,
+                    "imageUrl": "https://pi.ruv.io/og-image.svg",
+                    "imageType": "CIRCLE"
+                },
+                "sections": sections
+            }
+        }]
+    })
+}
+
+fn chat_text_section(text: &str) -> serde_json::Value {
+    serde_json::json!({
+        "widgets": [{"textParagraph": {"text": text}}]
+    })
+}
+
+fn chat_kv_section(items: &[(&str, &str)]) -> serde_json::Value {
+    let widgets: Vec<_> = items.iter().map(|(label, value)| {
+        serde_json::json!({
+            "decoratedText": {
+                "topLabel": label,
+                "text": value
+            }
+        })
+    }).collect();
+    serde_json::json!({"widgets": widgets})
+}
+
+/// POST /v1/chat/google — Google Chat bot webhook
+/// Accepts any JSON (serde_json::Value) to handle all Google Chat payload variants
+async fn google_chat_handler(
+    State(state): State<AppState>,
+    body: axum::body::Bytes,
+) -> Json<serde_json::Value> {
+    // Parse body manually for resilience — log raw payload on failure
+    let event: GoogleChatEvent = match serde_json::from_slice(&body) {
+        Ok(e) => e,
+        Err(err) => {
+            let raw = String::from_utf8_lossy(&body);
+            tracing::warn!("Failed to parse Chat event: {}. Raw: {}", err, &raw[..raw.len().min(500)]);
+            return Json(serde_json::json!({
+                "text": "Pi Brain received your message but couldn't parse it. Try: help"
+            }));
+        }
+    };
+
+    let event_type = event.event_type.as_deref().unwrap_or("MESSAGE");
+    let user_name = event.user.as_ref()
+        .and_then(|u| u.display_name.as_deref())
+        .unwrap_or("Explorer");
+    let space_name = event.space.as_ref()
+        .and_then(|s| s.display_name.as_deref())
+        .unwrap_or("Direct");
+
+    tracing::info!("Google Chat event: type={}, user={}, space={}", event_type, user_name, space_name);
+
+    // Handle ADDED_TO_SPACE — welcome message
+    if event_type == "ADDED_TO_SPACE" {
+        let memories = state.store.memory_count();
+        let edges = state.graph.read().edge_count();
+        return Json(chat_card(
+            "Pi Brain Connected",
+            &format!("Hello {}! The brain is ready.", user_name),
+            vec![
+                chat_text_section(&format!(
+                    "I'm the shared superintelligence at <a href=\"https://pi.ruv.io\">pi.ruv.io</a> — {} memories, {} graph edges, always learning.",
+                    memories, edges
+                )),
+                chat_text_section(
+                    "<b>Commands:</b>\n\
+                    <b>search</b> &lt;query&gt; — Semantic search\n\
+                    <b>status</b> — Brain health metrics\n\
+                    <b>help</b> — Full command list\n\
+                    <b>drift</b> — Knowledge drift analysis\n\
+                    <b>recent</b> — Latest discoveries"
+                ),
+            ]
+        ));
+    }
+
+    // Handle REMOVED_FROM_SPACE
+    if event_type == "REMOVED_FROM_SPACE" {
+        return Json(serde_json::json!({}));
+    }
+
+    // Handle MESSAGE
+    let raw_text = event.message.as_ref()
+        .and_then(|m| m.argument_text.as_deref().or(m.text.as_deref()))
+        .unwrap_or("")
+        .trim();
+
+    // Strip bot mention prefix if present
+    let text = raw_text.trim_start_matches("@Pi Brain").trim_start_matches("@pi").trim();
+
+    let cmd = text.split_whitespace().next().unwrap_or("").to_lowercase();
+    let args = text.strip_prefix(&cmd).unwrap_or("").trim();
+
+    match cmd.as_str() {
+        "search" | "find" | "query" => {
+            if args.is_empty() {
+                return Json(chat_card("Search", "Missing query", vec![
+                    chat_text_section("Usage: <b>search</b> &lt;your query&gt;\n\nExample: <b>search authentication patterns</b>")
+                ]));
+            }
+
+            let embedding = state.embedding_engine.read().embed(args);
+            let all = state.store.all_memories();
+            let mut scored: Vec<_> = all.iter()
+                .map(|m| {
+                    let score = cosine_similarity(&embedding, &m.embedding);
+                    (&m.title, &m.content, &m.category, score)
+                })
+                .filter(|(_, _, _, s)| *s > 0.1)
+                .collect();
+            scored.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+
+            let top: Vec<_> = scored.into_iter().take(5).collect();
+            if top.is_empty() {
+                return Json(chat_card("Search Results", args, vec![
+                    chat_text_section("No results found. Try a broader query.")
+                ]));
+            }
+
+            let mut result_text = String::new();
+            for (i, (title, content, cat, score)) in top.iter().enumerate() {
+                let truncated = if content.len() > 150 { &content[..150] } else { content.as_str() };
+                result_text.push_str(&format!(
+                    "<b>{}.</b> {} <i>({})</i>\n{}\n<font color=\"#888888\">score: {:.3}</font>\n\n",
+                    i + 1, title, cat, truncated, score
+                ));
+            }
+
+            Json(chat_card(
+                "Search Results",
+                &format!("\"{}\" — {} results", args, top.len()),
+                vec![chat_text_section(&result_text)]
+            ))
+        }
+
+        "status" | "stats" | "health" => {
+            let memories = state.store.memory_count();
+            let edges = state.graph.read().edge_count();
+            let sona = state.sona.read().stats().patterns_stored;
+            let drift = state.drift.read().compute_drift(None);
+            let uptime = state.start_time.elapsed().as_secs();
+
+            Json(chat_card(
+                "Brain Status",
+                "pi.ruv.io",
+                vec![chat_kv_section(&[
+                    ("Memories", &format!("{}", memories)),
+                    ("Graph Edges", &format!("{}", edges)),
+                    ("SONA Patterns", &format!("{}", sona)),
+                    ("Drift", &format!("{:.4} ({})", drift.coefficient_of_variation, drift.trend)),
+                    ("Uptime", &format!("{}h {}m", uptime / 3600, (uptime % 3600) / 60)),
+                ])]
+            ))
+        }
+
+        "drift" => {
+            let report = state.drift.read().compute_drift(None);
+            Json(chat_card(
+                "Knowledge Drift",
+                &format!("{}", if report.is_drifting { "Drifting" } else { "Stable" }),
+                vec![chat_kv_section(&[
+                    ("Coefficient of Variation", &format!("{:.4}", report.coefficient_of_variation)),
+                    ("Is Drifting", &format!("{}", report.is_drifting)),
+                    ("Trend", &report.trend),
+                    ("Suggested Action", &report.suggested_action),
+                ])]
+            ))
+        }
+
+        "recent" | "latest" | "discoveries" => {
+            let mut all = state.store.all_memories();
+            all.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            let recent: Vec<_> = all.into_iter().take(5).collect();
+
+            let mut text = String::new();
+            for (i, m) in recent.iter().enumerate() {
+                let truncated = if m.content.len() > 100 { &m.content[..100] } else { &m.content };
+                text.push_str(&format!(
+                    "<b>{}.</b> {} <i>({})</i>\n{}\n\n",
+                    i + 1, m.title, m.category, truncated
+                ));
+            }
+
+            Json(chat_card(
+                "Latest Discoveries",
+                &format!("{} most recent", recent.len()),
+                vec![chat_text_section(&text)]
+            ))
+        }
+
+        "help" | "commands" | "" => {
+            Json(chat_card(
+                "Pi Brain — Commands",
+                "Shared superintelligence at pi.ruv.io",
+                vec![
+                    chat_text_section(
+                        "<b>search</b> &lt;query&gt; — Semantic knowledge search\n\
+                        <b>status</b> — Brain health &amp; metrics\n\
+                        <b>drift</b> — Knowledge drift analysis\n\
+                        <b>recent</b> — Latest discoveries\n\
+                        <b>help</b> — This command list"
+                    ),
+                    chat_text_section(
+                        "<a href=\"https://pi.ruv.io\">pi.ruv.io</a> · \
+                        <a href=\"https://pi.ruv.io/v1/status\">API Status</a> · \
+                        <a href=\"https://pi.ruv.io/origin\">Origin Story</a>"
+                    ),
+                ]
+            ))
+        }
+
+        _ => {
+            // Treat unknown commands as search queries
+            let query = text;
+            let embedding = state.embedding_engine.read().embed(query);
+            let all = state.store.all_memories();
+            let mut scored: Vec<_> = all.iter()
+                .map(|m| {
+                    let score = cosine_similarity(&embedding, &m.embedding);
+                    (&m.title, &m.content, &m.category, score)
+                })
+                .filter(|(_, _, _, s)| *s > 0.15)
+                .collect();
+            scored.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+
+            let top: Vec<_> = scored.into_iter().take(3).collect();
+            if top.is_empty() {
+                return Json(chat_card("Pi Brain", "I didn't understand that", vec![
+                    chat_text_section(&format!(
+                        "I couldn't find anything for \"<i>{}</i>\".\n\nTry: <b>search</b> &lt;query&gt; or type <b>help</b> for commands.",
+                        text
+                    ))
+                ]));
+            }
+
+            let mut result_text = format!("Results for \"<i>{}</i>\":\n\n", query);
+            for (i, (title, content, cat, score)) in top.iter().enumerate() {
+                let truncated = if content.len() > 120 { &content[..120] } else { content.as_str() };
+                result_text.push_str(&format!(
+                    "<b>{}.</b> {} <i>({})</i>\n{}\n\n",
+                    i + 1, title, cat, truncated
+                ));
+            }
+
+            Json(chat_card("Pi Brain", &format!("{} results", top.len()), vec![
+                chat_text_section(&result_text)
+            ]))
+        }
+    }
+}
+
+// ── Inbound Email Webhook Handler (ADR-125) ─────────────────────────
+
+/// Resend inbound email webhook payload
+#[derive(Debug, serde::Deserialize)]
+struct ResendInboundPayload {
+    #[serde(rename = "type")]
+    event_type: Option<String>,
+    data: Option<ResendInboundData>,
+    // Flat fields (Resend sometimes sends flat payloads)
+    from: Option<String>,
+    to: Option<serde_json::Value>, // String or Vec<String>
+    subject: Option<String>,
+    html: Option<String>,
+    text: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ResendInboundData {
+    from: Option<String>,
+    to: Option<serde_json::Value>,
+    subject: Option<String>,
+    html: Option<String>,
+    text: Option<String>,
+}
+
+/// POST /v1/email/inbound — Resend webhook for incoming email
+/// Parses the subject for a command and replies via Resend.
+async fn email_inbound(
+    State(state): State<AppState>,
+    _headers: HeaderMap,
+    Json(payload): Json<ResendInboundPayload>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    // Extract fields from nested or flat payload
+    let (from, subject, body_text) = match &payload.data {
+        Some(d) => (
+            d.from.as_deref().or(payload.from.as_deref()).unwrap_or("unknown"),
+            d.subject.as_deref().or(payload.subject.as_deref()).unwrap_or(""),
+            d.text.as_deref().or(d.html.as_deref())
+                .or(payload.text.as_deref()).or(payload.html.as_deref())
+                .unwrap_or(""),
+        ),
+        None => (
+            payload.from.as_deref().unwrap_or("unknown"),
+            payload.subject.as_deref().unwrap_or(""),
+            payload.text.as_deref().or(payload.html.as_deref()).unwrap_or(""),
+        ),
+    };
+
+    tracing::info!("Inbound email: from={}, subject={}", from, subject);
+
+    let notifier = match state.notifier.as_ref() {
+        Some(n) => n,
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "error": "notifier not configured" }))),
+    };
+
+    // Parse command from subject (case-insensitive, strip Re: prefixes)
+    let clean_subject = subject
+        .trim()
+        .to_lowercase();
+    let cmd = clean_subject
+        .trim_start_matches("re:")
+        .trim_start_matches("fwd:")
+        .trim_start_matches("fw:")
+        .trim_start_matches("[pi.ruv.io/")
+        .split(']')
+        .last()
+        .unwrap_or(&clean_subject)
+        .trim();
+
+    let reply_to = from;
+
+    match cmd.split_whitespace().next().unwrap_or("") {
+        "search" => {
+            let query = cmd.strip_prefix("search").unwrap_or("").trim();
+            if query.is_empty() {
+                let _ = notifier.send_to(reply_to, "chat", "Re: search",
+                    &format!(r#"<div style="font-family:monospace;background:#0a0a23;color:#e0e0ff;padding:20px;border-radius:8px;">
+                    <p style="color:#ff6b6b;">Please include a search query, e.g.: <code>search authentication patterns</code></p></div>"#)).await;
+                return (StatusCode::OK, Json(serde_json::json!({"ok": true, "action": "search_empty"})));
+            }
+
+            // Perform semantic search
+            let embedding = {
+                let engine = state.embedding_engine.read();
+                engine.embed(query)
+            };
+            let all = state.store.all_memories();
+            let mut scored: Vec<_> = all.iter()
+                .map(|m| {
+                    let score = cosine_similarity(&embedding, &m.embedding);
+                    (m.title.clone(), m.content.clone(), score)
+                })
+                .filter(|(_, _, s)| *s > 0.1)
+                .collect();
+            scored.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+            let top: Vec<_> = scored.into_iter().take(5).collect();
+
+            let _ = notifier.send_search_results(reply_to, query, &top).await;
+            (StatusCode::OK, Json(serde_json::json!({"ok": true, "action": "search", "query": query, "results": top.len()})))
+        }
+
+        "status" => {
+            let (memories, graph_edges, sona_patterns, drift) = {
+                let memories = state.store.memory_count();
+                let graph_edges = state.graph.read().edge_count();
+                let sona_patterns = state.sona.read().stats().patterns_stored;
+                let drift = state.drift.read().compute_drift(None).coefficient_of_variation;
+                (memories, graph_edges, sona_patterns, drift)
+            };
+            let _ = notifier.send_status(memories, graph_edges, sona_patterns, drift).await;
+            (StatusCode::OK, Json(serde_json::json!({"ok": true, "action": "status"})))
+        }
+
+        "help" => {
+            let _ = notifier.send_help(Some(reply_to)).await;
+            (StatusCode::OK, Json(serde_json::json!({"ok": true, "action": "help"})))
+        }
+
+        "welcome" => {
+            let _ = notifier.send_welcome(reply_to, None).await;
+            (StatusCode::OK, Json(serde_json::json!({"ok": true, "action": "welcome"})))
+        }
+
+        "subscribe" => {
+            let _ = notifier.send_welcome(reply_to, None).await;
+            (StatusCode::OK, Json(serde_json::json!({"ok": true, "action": "subscribe"})))
+        }
+
+        "unsubscribe" => {
+            tracing::info!("Unsubscribe via email: {}", reply_to);
+            let _ = notifier.send_to(reply_to, "chat", "Unsubscribed from Pi Brain",
+                r#"<div style="font-family:monospace;background:#0a0a23;color:#e0e0ff;padding:20px;border-radius:8px;">
+                <h2 style="color:#4fc3f7;">Unsubscribed</h2>
+                <p>You've been removed from Pi Brain digests. Reply with <code style="color:#7fdbca;">subscribe</code> anytime to rejoin.</p>
+                </div>"#).await;
+            (StatusCode::OK, Json(serde_json::json!({"ok": true, "action": "unsubscribe"})))
+        }
+
+        "drift" => {
+            let drift_report = state.drift.read().compute_drift(None);
+            let html = format!(
+                r#"<div style="font-family:monospace;background:#0a0a23;color:#e0e0ff;padding:20px;border-radius:8px;">
+                <h2 style="color:#4fc3f7;">Knowledge Drift Report</h2>
+                <table style="color:#e0e0ff;font-size:14px;">
+                <tr><td style="padding:4px 12px 4px 0;">Coefficient of Variation</td><td><strong>{:.4}</strong></td></tr>
+                <tr><td style="padding:4px 12px 4px 0;">Is Drifting</td><td><strong>{}</strong></td></tr>
+                <tr><td style="padding:4px 12px 4px 0;">Trend</td><td><strong>{}</strong></td></tr>
+                <tr><td style="padding:4px 12px 4px 0;">Suggested Action</td><td>{}</td></tr>
+                </table></div>"#,
+                drift_report.coefficient_of_variation,
+                if drift_report.is_drifting { "Yes" } else { "No" },
+                drift_report.trend,
+                drift_report.suggested_action,
+            );
+            let _ = notifier.send_to(reply_to, "chat", "Pi Brain — Drift Report", &html).await;
+            (StatusCode::OK, Json(serde_json::json!({"ok": true, "action": "drift"})))
+        }
+
+        _ => {
+            // Unknown command — send help
+            let _ = notifier.send_help(Some(reply_to)).await;
+            (StatusCode::OK, Json(serde_json::json!({"ok": true, "action": "help_fallback", "unrecognized": cmd})))
+        }
+    }
+}
+
+/// Verify the system key for internal endpoints
+fn verify_system_key(
+    headers: &HeaderMap,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    let system_key = std::env::var("BRAIN_SYSTEM_KEY").unwrap_or_default();
+    // If no system key is set, allow (dev mode)
+    if system_key.is_empty() {
+        return Ok(());
+    }
+    let auth = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let token = auth.strip_prefix("Bearer ").unwrap_or(auth);
+    if subtle::ConstantTimeEq::ct_eq(token.as_bytes(), system_key.as_bytes()).into() {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "error": "invalid system key" })),
+        ))
     }
 }

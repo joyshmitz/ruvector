@@ -274,6 +274,7 @@ pub async fn create_router() -> (Router, AppState) {
         crawl_adapter,
         cached_partition: Arc::new(parking_lot::RwLock::new(None)),
         notifier: crate::notify::ResendNotifier::from_env(),
+        cached_status: Arc::new(parking_lot::RwLock::new(None)),
     };
 
     let router = Router::new()
@@ -2147,6 +2148,16 @@ async fn partition(
 async fn status(
     State(state): State<AppState>,
 ) -> Json<StatusResponse> {
+    // Return cached response if fresh (< 5 seconds old)
+    {
+        let cache = state.cached_status.read();
+        if let Some((ts, ref resp)) = *cache {
+            if ts.elapsed() < std::time::Duration::from_secs(5) {
+                return Json(resp.clone());
+            }
+        }
+    }
+
     let graph = state.graph.read();
     // Use node_count as a cheap proxy for cluster count instead of running
     // full MinCut partitioning on every status call (expensive O(V*E) op)
@@ -2215,7 +2226,7 @@ async fn status(
         0.0
     };
 
-    Json(StatusResponse {
+    let resp = StatusResponse {
         total_memories: state.store.memory_count(),
         total_contributors: state.store.contributor_count(),
         graph_nodes: graph.node_count(),
@@ -2266,7 +2277,12 @@ async fn status(
         midstream_strange_loop_version: strange_loop::VERSION.to_string(),
         sparsifier_compression: graph.sparsifier_stats().map(|s| s.compression_ratio).unwrap_or(0.0),
         sparsifier_edges: graph.sparsifier_stats().map(|s| s.sparsified_edges).unwrap_or(0),
-    })
+    };
+
+    // Cache the computed response for 5 seconds
+    *state.cached_status.write() = Some((std::time::Instant::now(), resp.clone()));
+
+    Json(resp)
 }
 
 /// GET /v1/sona/stats — SONA learning engine statistics (auth required)
@@ -5809,9 +5825,10 @@ struct GoogleChatUser {
     email: Option<String>,
 }
 
-/// Google Chat card response
+/// Google Chat card response — always includes `text` fallback for HTTP endpoint mode
 fn chat_card(title: &str, subtitle: &str, sections: Vec<serde_json::Value>) -> serde_json::Value {
     serde_json::json!({
+        "text": format!("{} — {}", title, subtitle),
         "cardsV2": [{
             "cardId": "brain-response",
             "card": {
@@ -5846,10 +5863,23 @@ fn chat_kv_section(items: &[(&str, &str)]) -> serde_json::Value {
 }
 
 /// POST /v1/chat/google — Google Chat bot webhook
+/// Accepts any JSON (serde_json::Value) to handle all Google Chat payload variants
 async fn google_chat_handler(
     State(state): State<AppState>,
-    Json(event): Json<GoogleChatEvent>,
+    body: axum::body::Bytes,
 ) -> Json<serde_json::Value> {
+    // Parse body manually for resilience — log raw payload on failure
+    let event: GoogleChatEvent = match serde_json::from_slice(&body) {
+        Ok(e) => e,
+        Err(err) => {
+            let raw = String::from_utf8_lossy(&body);
+            tracing::warn!("Failed to parse Chat event: {}. Raw: {}", err, &raw[..raw.len().min(500)]);
+            return Json(serde_json::json!({
+                "text": "Pi Brain received your message but couldn't parse it. Try: help"
+            }));
+        }
+    };
+
     let event_type = event.event_type.as_deref().unwrap_or("MESSAGE");
     let user_name = event.user.as_ref()
         .and_then(|u| u.display_name.as_deref())

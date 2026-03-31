@@ -142,6 +142,7 @@ members = [
     "crates/ruvector-consciousness",
     "crates/ruvector-consciousness-wasm",
     "examples/cmb-consciousness",
+    "examples/gw-consciousness",
 ]
 resolver = "2"
 

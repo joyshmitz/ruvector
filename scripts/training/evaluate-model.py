@@ -41,28 +41,29 @@ FFN_DIM = 512
 
 
 class DeobfuscationModel(nn.Module):
-    """Mirror of the training model for inference."""
+    """Mirror of the training model for inference. Supports configurable arch."""
 
-    def __init__(self):
+    def __init__(self, embed_dim=128, num_heads=4, num_layers=3, ffn_dim=512):
         super().__init__()
         total_seq = MAX_CONTEXT + MAX_NAME
         self.max_context = MAX_CONTEXT
         self.max_name = MAX_NAME
 
-        self.char_embed = nn.Embedding(VOCAB_SIZE, EMBED_DIM, padding_idx=PAD_TOKEN)
-        self.pos_embed = nn.Embedding(total_seq, EMBED_DIM)
+        self.char_embed = nn.Embedding(VOCAB_SIZE, embed_dim, padding_idx=PAD_TOKEN)
+        self.pos_embed = nn.Embedding(total_seq, embed_dim)
 
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=EMBED_DIM,
-            nhead=NUM_HEADS,
-            dim_feedforward=FFN_DIM,
+            d_model=embed_dim,
+            nhead=num_heads,
+            dim_feedforward=ffn_dim,
             batch_first=True,
             dropout=0.1,
             activation="gelu",
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer, NUM_LAYERS)
-        self.layer_norm = nn.LayerNorm(EMBED_DIM)
-        self.output = nn.Linear(EMBED_DIM, VOCAB_SIZE)
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers)
+        self.layer_norm = nn.LayerNorm(embed_dim)
+        # Support both old ('output') and new ('output_proj') naming
+        self.output_proj = nn.Linear(embed_dim, VOCAB_SIZE)
 
     def forward(self, input_tokens):
         batch_size, seq_len = input_tokens.shape
@@ -73,7 +74,7 @@ class DeobfuscationModel(nn.Module):
         x = self.encoder(x, src_key_padding_mask=pad_mask)
         x = self.layer_norm(x)
         name_out = x[:, -self.max_name:, :]
-        logits = self.output(name_out)
+        logits = self.output_proj(name_out)
         return logits
 
 
@@ -125,11 +126,24 @@ def evaluate(model_path, test_path, split_ratio=0.1, top_k=5, device_str="cpu"):
 
     # Load model
     print(f"Loading model from {model_path}")
-    model = DeobfuscationModel().to(device)
-
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+
+    # Read architecture config from checkpoint if available
+    config = checkpoint.get("config", {})
+    embed_dim = config.get("embed_dim", EMBED_DIM)
+    num_heads = config.get("num_heads", NUM_HEADS)
+    num_layers = config.get("num_layers", NUM_LAYERS)
+    ffn_dim = config.get("ffn_dim", FFN_DIM)
+
+    model = DeobfuscationModel(embed_dim, num_heads, num_layers, ffn_dim).to(device)
+
     if "model_state_dict" in checkpoint:
-        model.load_state_dict(checkpoint["model_state_dict"])
+        # Handle old checkpoints that use 'output' instead of 'output_proj'
+        state_dict = checkpoint["model_state_dict"]
+        if "output.weight" in state_dict and "output_proj.weight" not in state_dict:
+            state_dict["output_proj.weight"] = state_dict.pop("output.weight")
+            state_dict["output_proj.bias"] = state_dict.pop("output.bias")
+        model.load_state_dict(state_dict)
         print(f"  Checkpoint epoch: {checkpoint.get('epoch', '?')}")
         print(f"  Checkpoint val_loss: {checkpoint.get('val_loss', '?'):.4f}")
         print(f"  Checkpoint val_acc: {checkpoint.get('val_acc', '?'):.4f}")

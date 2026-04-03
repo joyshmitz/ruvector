@@ -15,7 +15,9 @@
 </p>
 
 <p align="center">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-51_passing-brightgreen?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-59_passing-brightgreen?style=flat-square" />
+  <img alt="Accuracy" src="https://img.shields.io/badge/accuracy-95.7%25-brightgreen?style=flat-square" />
+  <img alt="Parse Rate" src="https://img.shields.io/badge/parse_rate-100%25-brightgreen?style=flat-square" />
   <img alt="Patterns" src="https://img.shields.io/badge/patterns-210-blue?style=flat-square" />
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" />
   <img alt="Rust" src="https://img.shields.io/badge/rust-pure-orange?style=flat-square" />

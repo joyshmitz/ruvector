@@ -80,23 +80,40 @@ impl<const N: usize> ProofEngine<N> {
         Ok(())
     }
 
-    /// P3 stub: returns `Unsupported` (deferred to post-v1).
+    /// P3: Deep proof — derivation chain verification.
+    ///
+    /// The actual chain walk is performed by `rvm-cap::ProofVerifier::verify_p3()`.
+    /// This method accepts the pre-computed result and emits the appropriate
+    /// witness record (verified or rejected).
+    ///
+    /// # Parameters
+    ///
+    /// - `chain_valid`: `true` if the derivation chain was verified by rvm-cap.
     ///
     /// # Errors
     ///
-    /// Always returns [`RvmError::Unsupported`].
+    /// Returns [`RvmError::ProofInvalid`] if `chain_valid` is `false`.
     pub fn verify_p3<const W: usize>(
         &self,
         context: &ProofContext,
         witness_log: &WitnessLog<W>,
+        chain_valid: bool,
     ) -> RvmResult<()> {
         let token = ProofToken {
             tier: rvm_types::ProofTier::P3,
             epoch: context.current_epoch,
             hash: 0,
         };
-        emit_proof_rejected(witness_log, context, &token);
-        Err(RvmError::Unsupported)
+        if chain_valid {
+            // Use the requested_operation as the action kind. The caller
+            // sets this via ProofContextBuilder::operation().
+            let action = ActionKind::ProofVerifiedP3;
+            emit_proof_witness(witness_log, action, context, &token);
+            Ok(())
+        } else {
+            emit_proof_rejected(witness_log, context, &token);
+            Err(RvmError::ProofInvalid)
+        }
     }
 }
 
@@ -218,13 +235,23 @@ mod tests {
     }
 
     #[test]
-    fn test_p3_not_implemented() {
+    fn test_p3_valid_chain() {
         let witness_log = WitnessLog::<32>::new();
         let engine = ProofEngine::<64>::new();
         let context = ProofContextBuilder::new(PartitionId::new(1)).build();
 
-        let result = engine.verify_p3(&context, &witness_log);
-        assert_eq!(result, Err(RvmError::Unsupported));
+        let result = engine.verify_p3(&context, &witness_log, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_p3_broken_chain() {
+        let witness_log = WitnessLog::<32>::new();
+        let engine = ProofEngine::<64>::new();
+        let context = ProofContextBuilder::new(PartitionId::new(1)).build();
+
+        let result = engine.verify_p3(&context, &witness_log, false);
+        assert_eq!(result, Err(RvmError::ProofInvalid));
     }
 
     #[test]
@@ -401,7 +428,7 @@ mod tests {
             .target_object(42)
             .build();
 
-        let _ = engine.verify_p3(&context, &witness_log);
+        let _ = engine.verify_p3(&context, &witness_log, false);
         let record = witness_log.get(0).unwrap();
         assert_eq!(record.action_kind, ActionKind::ProofRejected as u8);
         assert_eq!(record.proof_tier, ProofTier::P3 as u8);

@@ -74,6 +74,23 @@ impl PartitionManager {
             .filter_map(|p| p.as_ref().map(|p| p.id))
     }
 
+    /// Remove a partition by ID, freeing its slot for reuse.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RvmError::PartitionNotFound`] if no partition with the given ID exists.
+    pub fn remove(&mut self, id: PartitionId) -> RvmResult<()> {
+        for slot in &mut self.partitions {
+            let matches = slot.as_ref().is_some_and(|p| p.id == id);
+            if matches {
+                *slot = None;
+                self.count -= 1;
+                return Ok(());
+            }
+        }
+        Err(RvmError::PartitionNotFound)
+    }
+
     /// Return the number of active partitions.
     #[must_use]
     pub fn count(&self) -> usize {

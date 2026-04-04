@@ -25,6 +25,11 @@ pub struct GateRequest {
     pub required_rights: CapRights,
     /// Optional proof commitment (required for state-mutating operations).
     pub proof_commitment: Option<WitnessHash>,
+    /// Whether to require P3 deep proof verification.
+    pub require_p3: bool,
+    /// P3 derivation chain result (set by caller if `require_p3` is true).
+    /// `true` = chain verified, `false` = chain broken.
+    pub p3_chain_valid: bool,
     /// The action being performed (for witness logging).
     pub action: ActionKind,
     /// Target object identifier.
@@ -51,6 +56,8 @@ pub enum SecurityError {
     InsufficientRights,
     /// P2 policy validation failed: proof commitment missing or invalid.
     PolicyViolation,
+    /// P3 deep proof failed: derivation chain broken.
+    DerivationChainBroken,
     /// An internal error occurred.
     Internal(RvmError),
 }
@@ -98,7 +105,7 @@ impl<'a, const N: usize> SecurityGate<'a, N> {
         }
 
         // Step 2: P2 policy validation — proof commitment
-        let proof_tier = if let Some(commitment) = &request.proof_commitment {
+        let mut proof_tier = if let Some(commitment) = &request.proof_commitment {
             if commitment.is_zero() {
                 self.emit_rejection(request);
                 return Err(SecurityError::PolicyViolation);
@@ -107,6 +114,15 @@ impl<'a, const N: usize> SecurityGate<'a, N> {
         } else {
             1 // P1-only (no proof commitment needed)
         };
+
+        // Step 2b: P3 deep proof — derivation chain (if required)
+        if request.require_p3 {
+            if !request.p3_chain_valid {
+                self.emit_rejection(request);
+                return Err(SecurityError::DerivationChainBroken);
+            }
+            proof_tier = 3;
+        }
 
         // Step 3: Emit witness record for the allowed action
         let seq = self.emit_allowed(request, proof_tier);
@@ -160,6 +176,8 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::READ,
             proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
             action: ActionKind::PartitionCreate,
             target_object_id: 42,
             timestamp_ns: 1000,
@@ -180,6 +198,8 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::READ,
             proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
             action: ActionKind::PartitionCreate,
             target_object_id: 42,
             timestamp_ns: 1000,
@@ -203,6 +223,8 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::READ | CapRights::WRITE,
             proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
             action: ActionKind::PartitionCreate,
             target_object_id: 42,
             timestamp_ns: 1000,
@@ -223,6 +245,8 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::READ,
             proof_commitment: Some(WitnessHash::ZERO),
+            require_p3: false,
+            p3_chain_valid: false,
             action: ActionKind::PartitionCreate,
             target_object_id: 42,
             timestamp_ns: 1000,
@@ -244,6 +268,8 @@ mod tests {
             required_type: CapType::Region,
             required_rights: CapRights::WRITE,
             proof_commitment: Some(commitment),
+            require_p3: false,
+            p3_chain_valid: false,
             action: ActionKind::RegionCreate,
             target_object_id: 100,
             timestamp_ns: 2000,
@@ -264,6 +290,8 @@ mod tests {
             required_type: CapType::Partition,
             required_rights: CapRights::READ,
             proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
             action: ActionKind::PartitionCreate,
             target_object_id: 1,
             timestamp_ns: ts,
@@ -277,5 +305,48 @@ mod tests {
         assert_eq!(r1.witness_sequence, 1);
         assert_eq!(r2.witness_sequence, 2);
         assert_eq!(log.total_emitted(), 3);
+    }
+
+    #[test]
+    fn test_gate_p3_valid_chain() {
+        let log = WitnessLog::<16>::new();
+        let gate = SecurityGate::new(&log);
+
+        let request = GateRequest {
+            token: make_token(CapType::Partition, CapRights::READ | CapRights::WRITE),
+            required_type: CapType::Partition,
+            required_rights: CapRights::READ,
+            proof_commitment: None,
+            require_p3: true,
+            p3_chain_valid: true,
+            action: ActionKind::PartitionCreate,
+            target_object_id: 42,
+            timestamp_ns: 1000,
+        };
+
+        let response = gate.check_and_execute(&request).unwrap();
+        assert_eq!(response.proof_tier, 3);
+    }
+
+    #[test]
+    fn test_gate_p3_broken_chain_denied() {
+        let log = WitnessLog::<16>::new();
+        let gate = SecurityGate::new(&log);
+
+        let request = GateRequest {
+            token: make_token(CapType::Partition, CapRights::READ | CapRights::WRITE),
+            required_type: CapType::Partition,
+            required_rights: CapRights::READ,
+            proof_commitment: None,
+            require_p3: true,
+            p3_chain_valid: false,
+            action: ActionKind::PartitionCreate,
+            target_object_id: 42,
+            timestamp_ns: 1000,
+        };
+
+        let err = gate.check_and_execute(&request).unwrap_err();
+        assert_eq!(err, SecurityError::DerivationChainBroken);
+        assert_eq!(log.total_emitted(), 1);
     }
 }

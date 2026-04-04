@@ -94,7 +94,7 @@ use rvm_boot::BootTracker;
 use rvm_cap::{CapManagerConfig, CapabilityManager};
 use rvm_coherence::{CoherenceDecision, DefaultCoherenceEngine};
 use rvm_memory::tier::{Tier, TierManager};
-use rvm_partition::{CommEdgeId, IpcManager, IpcMessage, PartitionManager};
+use rvm_partition::{CommEdgeId, DeviceLeaseManager, IpcManager, IpcMessage, PartitionManager};
 use rvm_sched::Scheduler;
 use rvm_types::{
     ActionKind, OwnedRegionId, PartitionConfig, PartitionId, RvmConfig, RvmError, RvmResult,
@@ -125,6 +125,12 @@ const DEFAULT_MAX_TIER_REGIONS: usize = 256;
 
 /// Recency decay per epoch (basis points subtracted each tick).
 const RECENCY_DECAY_PER_EPOCH: u16 = 200;
+
+/// Default maximum hardware devices.
+const DEFAULT_MAX_DEVICES: usize = 32;
+
+/// Default maximum concurrent device leases.
+const DEFAULT_MAX_LEASES: usize = 64;
 
 /// Result of a single epoch tick, combining scheduler and coherence outputs.
 #[derive(Debug, Clone)]
@@ -176,6 +182,8 @@ pub struct Kernel {
     ipc: IpcManager<DEFAULT_MAX_IPC_CHANNELS, DEFAULT_IPC_QUEUE_SIZE>,
     /// Coherence-driven memory tier manager.
     tier_manager: TierManager<DEFAULT_MAX_TIER_REGIONS>,
+    /// Hardware device lease manager.
+    devices: DeviceLeaseManager<DEFAULT_MAX_DEVICES, DEFAULT_MAX_LEASES>,
     /// Boot progress tracker.
     boot: BootTracker,
     /// Kernel configuration.
@@ -217,6 +225,7 @@ impl Kernel {
             coherence: DefaultCoherenceEngine::with_defaults(Self::DEFAULT_MINCUT_BUDGET),
             ipc: IpcManager::new(),
             tier_manager: TierManager::new(),
+            devices: DeviceLeaseManager::new(),
             boot: BootTracker::new(),
             config: config.rvm,
             booted: false,
@@ -360,20 +369,27 @@ impl Kernel {
 
     /// Destroy a partition and reclaim its resources.
     ///
-    /// Removes the partition from the coherence graph and emits a
-    /// `PartitionDestroy` witness. Full resource reclamation is deferred.
+    /// Destroy a partition: remove from manager, coherence graph, and emit witness.
     pub fn destroy_partition(&mut self, id: PartitionId) -> RvmResult<()> {
         if !self.booted {
             return Err(RvmError::InvalidPartitionState);
         }
 
-        // Verify the partition exists.
-        if self.partitions.get(id).is_none() {
-            return Err(RvmError::PartitionNotFound);
+        // Verify the partition exists and mark as Destroyed.
+        let state = self
+            .partitions
+            .get(id)
+            .ok_or(RvmError::PartitionNotFound)?
+            .state;
+        if !rvm_partition::valid_transition(state, rvm_partition::PartitionState::Destroyed) {
+            return Err(RvmError::InvalidPartitionState);
         }
 
-        // Remove from coherence graph (best-effort).
+        // Remove from coherence graph.
         let _ = self.coherence.remove_partition(id);
+
+        // Remove from partition manager (frees the slot).
+        self.partitions.remove(id)?;
 
         // Emit witness.
         let mut record = WitnessRecord::zeroed();
@@ -750,6 +766,62 @@ impl Kernel {
         self.tier_manager.get(region_id).map(|s| s.tier)
     }
 
+    // -- Device lease management --
+
+    /// Register a hardware device.
+    pub fn register_device(
+        &mut self,
+        info: rvm_partition::DeviceInfo,
+    ) -> RvmResult<u32> {
+        self.devices.register_device(info)
+    }
+
+    /// Grant a time-bounded lease on a device to a partition.
+    ///
+    /// Emits a `DeviceLeaseGrant` witness record.
+    pub fn grant_device_lease(
+        &mut self,
+        device_id: u32,
+        partition: PartitionId,
+        duration_epochs: u64,
+        cap_hash: u32,
+    ) -> RvmResult<rvm_types::DeviceLeaseId> {
+        if !self.booted {
+            return Err(RvmError::InvalidPartitionState);
+        }
+        let epoch = self.scheduler.current_epoch() as u64;
+        let lease_id = self.devices.grant_lease(
+            device_id, partition, duration_epochs, epoch, cap_hash,
+        )?;
+
+        let mut record = WitnessRecord::zeroed();
+        record.action_kind = ActionKind::DeviceLeaseGrant as u8;
+        record.proof_tier = 1;
+        record.actor_partition_id = partition.as_u32();
+        record.target_object_id = device_id as u64;
+        self.witness_log.append(record);
+
+        Ok(lease_id)
+    }
+
+    /// Revoke a device lease.
+    ///
+    /// Emits a `DeviceLeaseRevoke` witness record.
+    pub fn revoke_device_lease(
+        &mut self,
+        lease_id: rvm_types::DeviceLeaseId,
+    ) -> RvmResult<()> {
+        self.devices.revoke_lease(lease_id)?;
+
+        let mut record = WitnessRecord::zeroed();
+        record.action_kind = ActionKind::DeviceLeaseRevoke as u8;
+        record.proof_tier = 1;
+        record.payload[0..8].copy_from_slice(&lease_id.as_u64().to_le_bytes());
+        self.witness_log.append(record);
+
+        Ok(())
+    }
+
     // -- Feature-gated subsystems --
 
     /// Whether the coherence engine is integrated.
@@ -832,6 +904,8 @@ impl Kernel {
             required_type: rvm_types::CapType::Partition,
             required_rights: rvm_types::CapRights::WRITE,
             proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
             action: ActionKind::PartitionCreate,
             target_object_id: 0,
             timestamp_ns: 0,
@@ -865,6 +939,8 @@ impl Kernel {
             required_type: rvm_types::CapType::Partition,
             required_rights: rvm_types::CapRights::WRITE,
             proof_commitment: None,
+            require_p3: false,
+            p3_chain_valid: false,
             action: ActionKind::IpcSend,
             target_object_id: msg.receiver.as_u32() as u64,
             timestamp_ns: 0,
@@ -909,6 +985,53 @@ impl Kernel {
     #[must_use]
     pub fn is_degraded(&self) -> bool {
         self.scheduler.is_degraded()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// KernelHostContext — connects Wasm host functions to real kernel subsystems
+// ---------------------------------------------------------------------------
+
+/// Host context that routes Wasm guest calls to the kernel's IPC subsystem.
+///
+/// Holds a mutable reference to the kernel's IPC manager and the
+/// partition ID that the guest belongs to. Memory allocation is
+/// delegated to the partition's own allocator (not held here).
+pub struct KernelHostContext<'a> {
+    /// The partition hosting this Wasm agent.
+    pub partition: PartitionId,
+    /// IPC manager for Send/Receive operations.
+    pub ipc: &'a mut IpcManager<DEFAULT_MAX_IPC_CHANNELS, DEFAULT_IPC_QUEUE_SIZE>,
+    /// Active IPC channel (set by the caller before dispatch).
+    pub active_channel: Option<CommEdgeId>,
+    /// Monotonic sequence counter for IPC messages.
+    pub next_sequence: u64,
+}
+
+impl<'a> rvm_wasm::host_functions::HostContext for KernelHostContext<'a> {
+    fn send(&mut self, _sender: rvm_wasm::agent::AgentId, target: u64, length: u64) -> RvmResult<u64> {
+        let edge = self.active_channel.ok_or(RvmError::PartitionNotFound)?;
+        let seq = self.next_sequence;
+        self.next_sequence += 1;
+        let msg = IpcMessage {
+            sender: self.partition,
+            receiver: PartitionId::new(target as u32),
+            edge_id: edge,
+            payload_len: length as u16,
+            msg_type: 0,
+            sequence: seq,
+            capability_hash: 0,
+        };
+        self.ipc.send(edge, msg)?;
+        Ok(length)
+    }
+
+    fn receive(&mut self, _receiver: rvm_wasm::agent::AgentId) -> RvmResult<u64> {
+        let edge = self.active_channel.ok_or(RvmError::PartitionNotFound)?;
+        match self.ipc.receive(edge)? {
+            Some(msg) => Ok(msg.payload_len as u64),
+            None => Ok(0),
+        }
     }
 }
 
@@ -1116,19 +1239,15 @@ mod tests {
     }
 
     #[test]
-    fn test_destroy_twice_succeeds_because_no_removal() {
-        // destroy_partition only verifies existence via get() but does
-        // not actually remove from the manager, so a second destroy of
-        // the same ID currently succeeds. This tests current behavior.
+    fn test_destroy_twice_fails_second_time() {
         let mut kernel = Kernel::with_defaults();
         kernel.boot().unwrap();
 
         let config = PartitionConfig::default();
         let id = kernel.create_partition(&config).unwrap();
         assert!(kernel.destroy_partition(id).is_ok());
-        // Second destroy: partition is still present because destroy
-        // does not remove from the manager.
-        assert!(kernel.destroy_partition(id).is_ok());
+        // Second destroy should fail — partition was removed.
+        assert_eq!(kernel.destroy_partition(id), Err(RvmError::PartitionNotFound));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //!
 //! - **P1**: Capability existence + rights check (< 1 us, bitmap AND).
 //! - **P2**: Structural invariant validation (< 100 us, constant-time).
-//! - **P3**: Deep proof (v1 stub, returns `P3NotImplemented`).
+//! - **P3**: Deep proof — derivation chain integrity (root reachability, epoch monotonicity).
 
 use crate::derivation::DerivationTree;
 use crate::error::ProofError;

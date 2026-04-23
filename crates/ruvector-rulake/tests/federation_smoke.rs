@@ -19,7 +19,7 @@ use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Normal, Uniform};
 
 use ruvector_rabitq::{AnnIndex, RabitqPlusIndex};
-use ruvector_rulake::{cache::Consistency, LocalBackend, RuLake};
+use ruvector_rulake::{cache::Consistency, FsBackend, LocalBackend, RuLake};
 
 fn clustered(n: usize, d: usize, n_clusters: usize, seed: u64) -> Vec<Vec<f32>> {
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -482,4 +482,76 @@ fn unknown_collection_returns_error() {
         err,
         ruvector_rulake::RuLakeError::UnknownCollection { .. }
     ));
+}
+
+#[test]
+fn fs_backend_end_to_end_search_and_recache_on_mtime_bump() {
+    // Proves the full bundle loop works against a real filesystem:
+    // FsBackend writes a .bin file, ruLake caches against the mtime
+    // witness, bump the file, and ruLake picks up the new generation
+    // on the next search.
+    let mut tmp = std::env::temp_dir();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    tmp.push(format!("rulake-fs-e2e-{}-{}", std::process::id(), nanos));
+
+    let back = Arc::new(FsBackend::new("disk", &tmp).unwrap());
+    back.write(
+        "c",
+        "c.bin",
+        3,
+        &[100, 200, 300],
+        &[
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 1.0],
+        ],
+    )
+    .unwrap();
+
+    let lake = RuLake::new(20, 42).with_consistency(Consistency::Fresh);
+    lake.register_backend(back.clone()).unwrap();
+
+    // First search — cache miss, then prime.
+    let hits = lake.search_one("disk", "c", &[1.0, 0.0, 0.0], 1).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, 100, "nearest to [1,0,0] should be id 100");
+
+    // Second search — cache hit (witness unchanged).
+    let before = lake.cache_stats();
+    let _ = lake.search_one("disk", "c", &[0.0, 1.0, 0.0], 1).unwrap();
+    let after = lake.cache_stats();
+    assert_eq!(
+        after.primes, before.primes,
+        "warm search should not re-prime"
+    );
+    assert!(
+        after.hits > before.hits,
+        "warm search should register a hit"
+    );
+
+    // Sleep past the 1-second mtime resolution so the bump is visible.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    // Rewrite with a different vector set — file mtime bumps.
+    back.write("c", "c.bin", 3, &[999], &[vec![10.0, 10.0, 10.0]])
+        .unwrap();
+
+    // Next search should re-prime because the witness (anchored on mtime)
+    // changed. The nearest id to the query is now 999.
+    let before = lake.cache_stats();
+    let hits = lake
+        .search_one("disk", "c", &[10.0, 10.0, 10.0], 1)
+        .unwrap();
+    let after = lake.cache_stats();
+    assert_eq!(hits[0].id, 999);
+    assert!(
+        after.primes > before.primes,
+        "mtime bump must trigger a re-prime (primes before={}, after={})",
+        before.primes,
+        after.primes
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
 }

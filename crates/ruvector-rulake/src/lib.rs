@@ -47,10 +47,12 @@ pub mod backend;
 pub mod bundle;
 pub mod cache;
 pub mod error;
+pub mod fs_backend;
 pub mod lake;
 
 pub use backend::{BackendAdapter, BackendId, CollectionId, LocalBackend, PulledBatch};
 pub use bundle::{Generation, RuLakeBundle};
 pub use cache::{CacheStats, VectorCache};
 pub use error::{Result, RuLakeError};
+pub use fs_backend::FsBackend;
 pub use lake::{RuLake, SearchResult};

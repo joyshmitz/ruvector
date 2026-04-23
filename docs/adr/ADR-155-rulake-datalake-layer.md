@@ -311,6 +311,18 @@ as a mode flag for customers who cannot tolerate cache staleness.
 - ~~**Crate placement.**~~ **Resolved:** `crates/ruvector-rulake/` — a
   top-level workspace member (not under `crates/rvf/`). Keeps rvf core
   `no_std`-friendly, matches the rabitq crate's location.
+- ~~**Cache sidecar daemon protocol.**~~ **Resolved:**
+  filesystem-based, witness-authenticated, atomic-write on publish,
+  three-state on refresh. The protocol is exposed as two symmetric
+  primitives: `RuLake::publish_bundle(key, dir)` (writer, atomic
+  temp+rename) and `RuLake::refresh_from_bundle_dir(key, dir)`
+  (reader, returns `RefreshResult::{UpToDate, Invalidated,
+  BundleMissing}`). A corrupt or tampered sidecar surfaces as
+  `InvalidParameter` via the witness-verification path, so a poisoned
+  publish cannot silently invalidate the cache. The sidecar daemon
+  itself is ~10 lines of user code — a loop that calls refresh on
+  each watched `(key, dir)` pair either on a timer or on inotify
+  events; the protocol is the primitive, not a daemon.
 
 ### Still open (M2+)
 
@@ -329,8 +341,3 @@ as a mode flag for customers who cannot tolerate cache staleness.
 5. **Remote-backend tax.** BENCHMARK.md's 1.00× tax on `LocalBackend`
    is the floor. M2 needs to measure the real tax on a Parquet-on-GCS
    prime and document the p50/p99 numbers the BQ UDF path can expect.
-6. **Cache sidecar daemon protocol.** Bundle sidecar is shipped, FS
-   persistence is atomic. The missing piece is the on-line protocol
-   by which the warehouse-push path hands a new `table.rulake.json`
-   to a running ruLake — file-watcher, signed notification, or a
-   polling refresh on `Eventual` TTL?

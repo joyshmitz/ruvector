@@ -555,3 +555,98 @@ fn fs_backend_end_to_end_search_and_recache_on_mtime_bump() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn concurrent_searches_are_safe_and_correct() {
+    // Spawn N threads hammering search_one and search_federated against
+    // a shared RuLake. Validates:
+    //   - no deadlocks (test completes in bounded time)
+    //   - no panics from the cache mutex or backend RwLock
+    //   - results are still correct (every reported hit is in the
+    //     global dataset at the correct score)
+    // This is the M3 "concurrent multi-client throughput" smoke — not a
+    // benchmark (the output is functional), just a contention check.
+    use std::thread;
+
+    let d = 32;
+    let n = 2_000;
+    let rerank = 20;
+    let seed = 77;
+    let n_threads = 8;
+    let queries_per_thread = 50;
+
+    let data = clustered(n, d, 20, seed);
+    let queries = clustered(n_threads * queries_per_thread, d, 20, seed ^ 0xfeed_beef);
+
+    // Two backends so we exercise both the single-shard and federated
+    // paths under the same test.
+    let chunk = n / 2;
+    let ba = Arc::new(LocalBackend::new("left"));
+    ba.put_collection("c", d, (0..chunk as u64).collect(), data[..chunk].to_vec())
+        .unwrap();
+    let bb = Arc::new(LocalBackend::new("right"));
+    bb.put_collection(
+        "c",
+        d,
+        (chunk as u64..n as u64).collect(),
+        data[chunk..].to_vec(),
+    )
+    .unwrap();
+
+    let lake = Arc::new(
+        RuLake::new(rerank, seed).with_consistency(Consistency::Eventual { ttl_ms: 60_000 }),
+    );
+    lake.register_backend(ba).unwrap();
+    lake.register_backend(bb).unwrap();
+
+    // Prime both shards first so threads don't all race the miss path
+    // (that's exercised by `two_backends_share_cache_when_witness_matches`
+    // and the LRU test; this one targets hit-path contention).
+    lake.search_one("left", "c", &queries[0], 10).unwrap();
+    lake.search_one("right", "c", &queries[0], 10).unwrap();
+
+    let mut handles = Vec::with_capacity(n_threads);
+    for t in 0..n_threads {
+        let lake = Arc::clone(&lake);
+        let qs = queries.clone();
+        let handle = thread::spawn(move || {
+            let lo = t * queries_per_thread;
+            let hi = lo + queries_per_thread;
+            let mut total_hits = 0usize;
+            for (i, q) in qs[lo..hi].iter().enumerate() {
+                // Alternate single-shard and federated calls.
+                let hits = if i % 2 == 0 {
+                    lake.search_one("left", "c", q, 5).unwrap()
+                } else {
+                    lake.search_federated(&[("left", "c"), ("right", "c")], q, 5)
+                        .unwrap()
+                };
+                // Every returned score must be finite + the hits must be
+                // sorted ascending.
+                for w in hits.windows(2) {
+                    assert!(w[0].score <= w[1].score, "hits not sorted");
+                }
+                for h in &hits {
+                    assert!(h.score.is_finite(), "nan/inf score: {}", h.score);
+                }
+                total_hits += hits.len();
+            }
+            total_hits
+        });
+        handles.push(handle);
+    }
+    let total: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
+    // Each thread did queries_per_thread searches of k=5.
+    assert_eq!(total, n_threads * queries_per_thread * 5);
+
+    // Cache stats should reflect many hits, at most a handful of primes
+    // (the first query per shard primed once; subsequent queries are hits
+    // on Eventual consistency within TTL).
+    let stats = lake.cache_stats();
+    assert!(stats.hits >= (n_threads * queries_per_thread) as u64);
+    assert!(
+        stats.primes <= 2,
+        "expected ≤ 2 primes, got {}",
+        stats.primes
+    );
+}

@@ -1,4 +1,5 @@
 #![allow(clippy::manual_div_ceil)]
+#![allow(clippy::too_many_arguments)]
 
 //! ruLake benchmark harness — measures:
 //!
@@ -139,6 +140,84 @@ fn measure_rulake_fed(
     (prime_ms, qps)
 }
 
+/// Measures concurrent-client QPS under C parallel clients, each running
+/// `queries_per_client` queries over an already-primed `n_shards`-shard
+/// federated collection. This is the workload where rayon fan-out
+/// actually matters: per-query wall clock drops when a shard's scan
+/// can run in parallel with others while clients keep arriving.
+fn measure_concurrent_fed(
+    d: usize,
+    rerank: usize,
+    seed: u64,
+    total_n: usize,
+    n_shards: usize,
+    n_clients: usize,
+    queries_per_client: usize,
+    queries: &[Vec<f32>],
+) -> (f64, f64) {
+    // (wall_ms, qps)
+    use std::thread;
+
+    let data = clustered(total_n, d, 100, seed);
+    let lake = Arc::new(
+        RuLake::new(rerank, seed).with_consistency(Consistency::Eventual { ttl_ms: 60_000 }),
+    );
+    let mut targets: Vec<(String, String)> = Vec::new();
+    let chunk = (total_n + n_shards - 1) / n_shards;
+    for s in 0..n_shards {
+        let lo = s * chunk;
+        let hi = ((s + 1) * chunk).min(total_n);
+        let backend_id = format!("shard-{s}");
+        let b = Arc::new(LocalBackend::new(&backend_id));
+        b.put_collection(
+            "c",
+            d,
+            (lo as u64..hi as u64).collect(),
+            data[lo..hi].to_vec(),
+        )
+        .unwrap();
+        lake.register_backend(b).unwrap();
+        targets.push((backend_id, "c".to_string()));
+    }
+
+    // Prime all shards in a single pass so client threads only do hits.
+    let target_refs_init: Vec<(&str, &str)> = targets
+        .iter()
+        .map(|(a, b)| (a.as_str(), b.as_str()))
+        .collect();
+    let _ = lake
+        .search_federated(&target_refs_init, &queries[0], 10)
+        .unwrap();
+
+    // Each client picks queries deterministically from the shared slice.
+    let t = Instant::now();
+    let mut handles = Vec::with_capacity(n_clients);
+    for c in 0..n_clients {
+        let lake = Arc::clone(&lake);
+        let targets = targets.clone();
+        let queries = queries.to_vec();
+        let h = thread::spawn(move || {
+            let lo = c * queries_per_client;
+            let refs: Vec<(&str, &str)> = targets
+                .iter()
+                .map(|(a, b)| (a.as_str(), b.as_str()))
+                .collect();
+            for i in 0..queries_per_client {
+                let q = &queries[(lo + i) % queries.len()];
+                let _ = lake.search_federated(&refs, q, 10).unwrap();
+            }
+        });
+        handles.push(h);
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    let wall_ms = t.elapsed().as_secs_f64() * 1000.0;
+    let total_queries = (n_clients * queries_per_client) as f64;
+    let qps = total_queries / (wall_ms / 1000.0);
+    (wall_ms, qps)
+}
+
 fn main() {
     let fast = std::env::args().any(|a| a == "--fast");
     println!("=== ruLake benchmark harness ===");
@@ -222,12 +301,28 @@ fn main() {
         }
         println!();
     }
+    if !fast {
+        println!("── concurrent clients × federation (n=100k, 8 clients × 300 queries) ──");
+        let n = 100_000;
+        let queries = clustered(300, d, 100, seed ^ 0xdead_beef);
+        for &shards in &[1, 2, 4] {
+            let (wall_ms, qps) =
+                measure_concurrent_fed(d, rerank, seed, n, shards, 8, 300, &queries);
+            println!(
+                "  {} shards × 8 clients × 300 queries   wall={:>7.1} ms   qps={:>8.0}",
+                shards, wall_ms, qps
+            );
+        }
+        println!();
+    }
+
     println!("Notes:");
     println!("  - 'tax' is the direct-QPS / lake-QPS ratio (1.0 = free, 2.0 = lake is 2× slower).");
     println!("  - Fresh calls LocalBackend::generation() on every query (one hash-map read —");
     println!("    on a real backend this is a network round-trip, expect materially higher tax).");
     println!("  - Eventual skips the generation check within TTL; this is the production path.");
-    println!("  - Federated fan-out runs on rayon (added 2026-04-22); shard count");
-    println!("    should improve tail latency, but per-shard work still adds to total");
-    println!("    wall clock when shards are balanced and CPU-bound.");
+    println!("  - Federated fan-out runs on rayon (added 2026-04-22).");
+    println!("  - Single-threaded QPS undersells rayon on federated reads; see the");
+    println!("    concurrent-clients block where inter-shard parallelism overlaps with");
+    println!("    inter-client parallelism.");
 }

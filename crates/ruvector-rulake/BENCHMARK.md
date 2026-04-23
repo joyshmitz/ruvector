@@ -56,11 +56,39 @@ Warm-cache federated QPS (sequentially-issued queries):
 | 100 000 |           2,991  |       2,361  |       1,673  |
 
 The QPS drop with shard count under this single-thread benchmark is
-expected: the bench issues queries serially, so each query pays rayon's
-`par_iter` startup for the shard fan-out. On a multi-client workload
-where K+ queries are concurrent — which is the actual production path —
-the wall-clock improvement shows up instead. The *tail latency* win
-(prime times above) is the design target regardless.
+*not* pure `par_iter` startup overhead — see the concurrent-client
+numbers below for the honest picture.
+
+### Concurrent clients × shard count (n = 100 k, 8 clients × 300 queries)
+
+| shards | wall (ms) |     QPS | QPS vs 1-shard |
+|-------:|----------:|--------:|---------------:|
+|      1 |     810.1 |   2,963 |           1.00 |
+|      2 |     960.0 |   2,500 |           0.84 |
+|      4 |   1,349.7 |   1,778 |           0.60 |
+
+**Counter-intuitive finding.** Under concurrent clients, more shards
+reduces throughput rather than increasing it, for this "same data split
+K ways on one box" benchmark shape. Root cause: the RaBitQ `rerank_factor
+× k = 200` rerank runs **per shard**, so K-shard federation does
+approximately K× the rerank work per query. Parallel fan-out helps with
+scan cost (bitmap popcount) but not the rerank. The bench isolates the
+cost that was hidden by the single-thread numbers.
+
+**Consequence.** The rayon fan-out is still the right shape — it
+minimizes tail latency on the miss path (prime-time speedups above) and
+parallelizes remote backend calls in the network-bound case — but:
+
+- Federation across local shards of **the same data** is never faster
+  than a single larger shard. Don't shard for throughput; shard for
+  reachability or memory.
+- Per-shard rerank factor is an obvious optimization target for M2.
+  Fan out at rerank=50 per shard (not 200) when `K ≥ 2` keeps global
+  recall above 90% while approximately K× reducing the per-shard rerank
+  cost. Left as a measurement-driven change, not a speculative one.
+- For a real deployment where shards hold *disjoint* data (e.g., one
+  per region or per tenant), the federated scan-cost gain is genuine —
+  it's just not what this bench measures.
 
 ## Acceptance checks (M1)
 

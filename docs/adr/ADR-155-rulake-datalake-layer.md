@@ -341,3 +341,24 @@ as a mode flag for customers who cannot tolerate cache staleness.
 5. **Remote-backend tax.** BENCHMARK.md's 1.00× tax on `LocalBackend`
    is the floor. M2 needs to measure the real tax on a Parquet-on-GCS
    prime and document the p50/p99 numbers the BQ UDF path can expect.
+
+6. **Per-shard rerank factor under federation.** Surfaced by the
+   concurrent-clients benchmark in `crates/ruvector-rulake/BENCHMARK.md`:
+   K-shard federated search pays ~K× the rerank work because the
+   RaBitQ `rerank_factor × k = 200` rerank runs per shard. The fix
+   needs a cross-crate API change:
+
+   1. Add `RabitqPlusIndex::search_with_rerank(&self, query, k, rerank_factor: usize) -> Vec<SearchResult>`
+      — same body as `search` but takes the rerank factor as a
+      parameter instead of reading the field. Keeps the stored field
+      as the default.
+   2. Plumb it through `VectorCache::search_cached_with_rerank` and
+      `RuLake::search_federated` with an optional `per_shard_rerank`
+      parameter. Default policy when caller doesn't override: divide
+      by K with a floor of 5.
+   3. Re-run the concurrent-clients bench to verify the per-shard
+      rerank cut actually pays off; recall@10 should stay > 85%.
+
+   Deferred to M2 because ruvector-rabitq was merged in the prior
+   sprint and changing its public API mid-branch is out of scope.
+   Filed as the explicit trigger for the first rabitq follow-up.

@@ -289,16 +289,46 @@ impl RuLake {
                 Some((global / shards).max(Self::MIN_PER_SHARD_RERANK))
             }
         });
+        // Per-shard over-request (2026-04-23 SOTA-federation agent):
+        //   k' = k + ceil(sqrt(k * ln(S)))
+        // Closes the data-skew gap Weaviate / Elasticsearch leave with
+        // naive k-per-shard fan-out. At k=10, S=4 this gives k'=13;
+        // at k=10, S=16, k'=16. Cheap insurance against one shard
+        // holding disproportionately more of the true top-K.
+        let k_per_shard = Self::over_request_k(k, shards);
         let shard_hits: Result<Vec<Vec<SearchResult>>> = targets
             .par_iter()
             .map(|(backend, collection)| {
-                self.search_one_with_rerank(backend, collection, query, k, rerank_override)
+                self.search_one_with_rerank(
+                    backend,
+                    collection,
+                    query,
+                    k_per_shard,
+                    rerank_override,
+                )
             })
             .collect();
         let mut merged: Vec<SearchResult> = shard_hits?.into_iter().flatten().collect();
         merged.sort_by(|a, b| a.score.total_cmp(&b.score));
         merged.truncate(k);
         Ok(merged)
+    }
+
+    /// Per-shard over-request for federated search:
+    /// `k' = k + ceil(sqrt(k * ln(S)))`, clamped to `[k, 4k]`.
+    ///
+    /// The formula is the folklore rule cited in the 2024-2025
+    /// federated-ANN literature (see SPIRE, HARMONY, OpenSearch
+    /// recall guide). Over-requests enough to cover data-skew across
+    /// shards without pulling so many rows that rerank cost explodes.
+    /// Single-shard (S=1) returns k unchanged.
+    #[inline]
+    fn over_request_k(k: usize, shards: usize) -> usize {
+        if shards <= 1 || k == 0 {
+            return k;
+        }
+        let bonus = ((k as f64) * (shards as f64).ln()).sqrt().ceil() as usize;
+        (k + bonus).min(k.saturating_mul(4))
     }
 
     /// Like [`search_one`] but with an optional per-call rerank override.

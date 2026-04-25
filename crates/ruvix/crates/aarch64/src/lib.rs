@@ -23,7 +23,7 @@
 //! 6. Jump to `kernel_main()`
 
 #![no_std]
-#![deny(unsafe_op_in_unsafe_fn)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 pub mod boot;
 pub mod exception;

@@ -76,7 +76,7 @@ jobs:
   test:
     name: Tests (${{ matrix.name }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -142,14 +142,35 @@ jobs:
               -p ruvector-solver
               -p ruvector-domain-expansion
               -p ruvector-robotics
+          - name: core-and-rest-heavy
+            # Hoist the known-heavy long-tail crates out of core-and-rest
+            # so neither shard exceeds the 90-min timeout.
+            packages: >-
+              -p ruvllm
+              -p ruvllm-cli
+              -p ruvector-dag
+              -p ruvector-nervous-system
+              -p ruvector-math
+              -p ruvector-consciousness
+              -p prime-radiant
+              -p mcp-brain
+              -p ruvector-decompiler
           - name: core-and-rest
-            # Everything else: core, delta, dag, server/cluster, math, etc.
+            # Everything else: core, delta, server/cluster, etc.
             # Uses --workspace + --exclude to subtract the groups above so we
             # don't have to enumerate ~100 crates by hand.
             packages: >-
               --workspace
               --exclude ruvector-postgres
               --exclude ruvector-decompiler
+              --exclude ruvllm
+              --exclude ruvllm-cli
+              --exclude ruvector-dag
+              --exclude ruvector-nervous-system
+              --exclude ruvector-math
+              --exclude ruvector-consciousness
+              --exclude prime-radiant
+              --exclude mcp-brain
               --exclude ruvector-rabitq
               --exclude ruvector-rulake
               --exclude ruvector-diskann

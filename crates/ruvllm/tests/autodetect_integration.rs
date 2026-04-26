@@ -133,12 +133,8 @@ fn test_quantization_recommendation_large_model() {
         .and_then(|g| g.vram_mb)
         .map(|m| m as f32 / 1024.0)
         .unwrap_or(0.0);
-    let available_ram_gb = caps
-        .available_memory_mb
-        .unwrap_or(caps.memory_mb / 2) as f32
-        / 1024.0;
-    let can_run_q8_or_better =
-        gpu_vram_gb >= 70.0 * 0.75 || available_ram_gb >= 70.0 * 1.5;
+    let available_ram_gb = caps.available_memory_mb.unwrap_or(caps.memory_mb / 2) as f32 / 1024.0;
+    let can_run_q8_or_better = gpu_vram_gb >= 70.0 * 0.75 || available_ram_gb >= 70.0 * 1.5;
 
     if !can_run_q8_or_better {
         assert!(
